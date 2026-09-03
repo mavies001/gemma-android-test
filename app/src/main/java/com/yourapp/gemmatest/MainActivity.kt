@@ -84,7 +84,7 @@ suspend fun runEngineTest(log: (String) -> Unit) {
 
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.CPU,
+                backend = Backend.CPU(),
             )
             val engine = Engine(engineConfig)
             engine.initialize()
