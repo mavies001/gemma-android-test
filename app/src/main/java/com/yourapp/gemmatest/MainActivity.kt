@@ -1,6 +1,10 @@
 package com.yourapp.gemmatest
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
@@ -16,10 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -31,6 +35,13 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (!Environment.isExternalStorageManager()) {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            intent.data = Uri.parse("package:$packageName")
+            startActivity(intent)
+        }
+
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -44,7 +55,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun EngineCheckScreen() {
     var log by remember { mutableStateOf("Tap the button to test engine load.") }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -65,8 +76,6 @@ fun EngineCheckScreen() {
 }
 
 suspend fun runEngineTest(log: (String) -> Unit) {
-    // Model path: reading directly from shared Downloads, matching where
-    // it already sits on the device from earlier manual testing.
     val modelPath = "/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm"
 
     val modelFile = File(modelPath)
