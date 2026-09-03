@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1-test"
+        versionName = "0.2-engine-test"
     }
 
     buildTypes {
@@ -45,4 +45,11 @@ dependencies {
     implementation("androidx.compose.ui:ui:1.6.8")
     implementation("androidx.compose.material3:material3:1.2.1")
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.8")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
+
+    // LiteRT-LM native Android runtime
+    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
+
+    // Coroutines, needed since engine.initialize() must run off the main thread
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
