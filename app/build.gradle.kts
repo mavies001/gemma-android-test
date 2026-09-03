@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -33,10 +34,6 @@ android {
     buildFeatures {
         compose = true
     }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
 }
 
 dependencies {
@@ -47,9 +44,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.8")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
 
-    // LiteRT-LM native Android runtime
     implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
 
-    // Coroutines, needed since engine.initialize() must run off the main thread
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
