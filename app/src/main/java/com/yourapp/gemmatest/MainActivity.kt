@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun EngineCheckScreen() {
-    var log by remember { mutableStateOf("Pick a test to run.") }
+    var log by remember { mutableStateOf("Tap the button to test engine load.") }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -65,98 +65,64 @@ fun EngineCheckScreen() {
             .padding(20.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text(text = "LiteRT-LM Storage Location Comparison")
-
+        Text(text = "LiteRT-LM Thread Count Test (7 threads)")
         Button(onClick = {
-            log = "Starting Test A (Downloads path)...\n"
+            log = "Starting...\n"
             scope.launch {
-                runEngineTest(
-                    modelPath = "/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm",
-                    context = context,
-                    label = "A (Downloads)",
-                ) { message -> log += message + "\n" }
+                runEngineTest(context) { message -> log += message + "\n" }
             }
         }) {
-            Text("Test A: Read from Downloads")
+            Text("Test A: Read from Downloads, 7 threads")
         }
-
-        Button(onClick = {
-            log = "Starting Test B (internal storage)...\n"
-            scope.launch {
-                val internalFile = File(context.filesDir, "gemma3-1b-it-int4.litertlm")
-                val sourceFile = File("/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm")
-
-                if (!internalFile.exists() || internalFile.length() != sourceFile.length()) {
-                    log += "Copying model into internal storage (one-time)...\n"
-                    val copyStart = System.currentTimeMillis()
-                    sourceFile.copyTo(internalFile, overwrite = true)
-                    val copyTime = (System.currentTimeMillis() - copyStart) / 1000.0
-                    log += "Copy finished in ${copyTime}s\n"
-                } else {
-                    log += "Model already present in internal storage, skipping copy.\n"
-                }
-
-                runEngineTest(
-                    modelPath = internalFile.absolutePath,
-                    context = context,
-                    label = "B (Internal)",
-                ) { message -> log += message + "\n" }
-            }
-        }) {
-            Text("Test B: Read from Internal Storage")
-        }
-
         Text(text = log)
     }
 }
 
-suspend fun runEngineTest(
-    modelPath: String,
-    context: Context,
-    label: String,
-    log: (String) -> Unit,
-) {
+suspend fun runEngineTest(context: Context, log: (String) -> Unit) {
+    val modelPath = "/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm"
+
     val modelFile = File(modelPath)
-    log("[$label] Checking model file...")
+    log("Checking model file...")
     if (!modelFile.exists()) {
-        log("[$label] ERROR: model file not found at $modelPath")
+        log("ERROR: model file not found at $modelPath")
         return
     }
-    log("[$label] Model file found: ${modelFile.length() / 1024 / 1024} MB")
+    log("Model file found: ${modelFile.length() / 1024 / 1024} MB")
 
     withContext(Dispatchers.IO) {
         try {
-            log("[$label] Creating engine with CPU backend...")
+            log("Creating engine with CPU backend, 7 threads...")
             val startTime = System.currentTimeMillis()
 
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.CPU(),
+                backend = Backend.CPU(threadCount = 7),
                 cacheDir = context.cacheDir.path,
             )
             val engine = Engine(engineConfig)
             engine.initialize()
 
             val loadTime = (System.currentTimeMillis() - startTime) / 1000.0
-            log("[$label] Engine initialized in ${loadTime}s")
+            log("Engine initialized in ${loadTime}s")
 
+            log("Creating conversation...")
             val conversation = engine.createConversation()
 
-            log("[$label] Sending test prompt...")
+            log("Sending test prompt...")
             val promptStart = System.currentTimeMillis()
 
             val response = conversation.sendMessage("What is the tallest building in the world?")
 
             val promptTime = (System.currentTimeMillis() - promptStart) / 1000.0
-            log("[$label] Response received in ${promptTime}s:")
-            log("[$label] $response")
+            log("Response received in ${promptTime}s:")
+            log(response.toString())
 
             engine.close()
-            log("[$label] Done. Engine closed.")
+            log("Done. Engine closed.")
 
         } catch (e: Exception) {
-            log("[$label] CAUGHT ERROR: ${e.message}")
-            log("[$label] Type: ${e.javaClass.simpleName}")
+            log("CAUGHT ERROR: ${e.message}")
+            log("Type: ${e.javaClass.simpleName}")
         }
     }
 }
