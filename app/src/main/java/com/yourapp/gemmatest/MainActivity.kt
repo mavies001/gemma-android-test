@@ -65,14 +65,14 @@ fun EngineCheckScreen() {
             .padding(20.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text(text = "LiteRT-LM Thread Count Test (7 threads)")
+        Text(text = "LiteRT-LM Test - no cacheDir, maxNumTokens=1024, default threads")
         Button(onClick = {
             log = "Starting...\n"
             scope.launch {
                 runEngineTest(context) { message -> log += message + "\n" }
             }
         }) {
-            Text("Test A: Read from Downloads, 7 threads")
+            Text("Run test")
         }
         Text(text = log)
     }
@@ -91,13 +91,13 @@ suspend fun runEngineTest(context: Context, log: (String) -> Unit) {
 
     withContext(Dispatchers.IO) {
         try {
-            log("Creating engine with CPU backend, 7 threads...")
+            log("Creating engine with CPU backend (default threads), no cacheDir, maxNumTokens=1024...")
             val startTime = System.currentTimeMillis()
 
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.CPU(threadCount = 7),
-                cacheDir = context.cacheDir.path,
+                backend = Backend.CPU(),
+                maxNumTokens = 1024,
             )
             val engine = Engine(engineConfig)
             engine.initialize()
