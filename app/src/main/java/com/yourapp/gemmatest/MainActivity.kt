@@ -337,10 +337,10 @@ fun Avatar(isUser: Boolean) {
         modifier = Modifier
             .size(32.dp)
             .clip(RoundedCornerShape(9.dp))
-            .background(
-                if (isUser) NovaColors.Surface2
-                else Brush.linearGradient(listOf(NovaColors.Blue500, NovaColors.Cyan))
-            )
+            .let {
+                if (isUser) it.background(NovaColors.Surface2)
+                else it.background(Brush.linearGradient(listOf(NovaColors.Blue500, NovaColors.Cyan)))
+            }
             .let { if (isUser) it.border(1.dp, NovaColors.Line, RoundedCornerShape(9.dp)) else it },
         contentAlignment = Alignment.Center
     ) {
