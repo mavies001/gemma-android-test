@@ -317,7 +317,7 @@ fun ChatMessageRow(msg: ChatMsg) {
                     if (isUser) Brush.linearGradient(listOf(NovaColors.Blue500, Color(0xFF4F7DFA)))
                     else Brush.linearGradient(listOf(NovaColors.Surface, NovaColors.Surface))
                 )
-                .then(if (!isUser) Modifier.border(1.dp, NovaColors.Line, RoundedCornerShape(16.dp)) else Modifier)
+                .let { if (!isUser) it.border(1.dp, NovaColors.Line, RoundedCornerShape(16.dp)) else it }
                 .padding(horizontal = 15.dp, vertical = 12.dp)
         ) {
             Text(
@@ -341,7 +341,7 @@ fun Avatar(isUser: Boolean) {
                 if (isUser) NovaColors.Surface2
                 else Brush.linearGradient(listOf(NovaColors.Blue500, NovaColors.Cyan))
             )
-            .then(if (isUser) Modifier.border(1.dp, NovaColors.Line, RoundedCornerShape(9.dp)) else Modifier),
+            .let { if (isUser) it.border(1.dp, NovaColors.Line, RoundedCornerShape(9.dp)) else it },
         contentAlignment = Alignment.Center
     ) {
         Text(if (isUser) "\uD83D\uDE42" else "\u2726", fontSize = 14.sp)
