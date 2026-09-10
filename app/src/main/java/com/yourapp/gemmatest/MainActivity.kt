@@ -43,12 +43,15 @@ import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.yourapp.gemmatest.data.AppDatabase
+import com.yourapp.gemmatest.data.ConversationEntity
+import com.yourapp.gemmatest.data.MessageEntity
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.random.Random
 
 object NovaColors {
     val Bg0 = Color(0xFF060A16)
@@ -64,21 +67,12 @@ object NovaColors {
     val Text2 = Color(0xFF6F7DB0)
 }
 
-data class Subject(val id: String, val label: String, val icon: String)
-
 enum class Role { USER, AI }
 
 data class ChatMsg(
     val role: Role,
     val text: String,
     val streaming: Boolean = false
-)
-
-val SUBJECTS = listOf(
-    Subject("general", "General Chat", "\uD83D\uDCAC"),
-    Subject("coding", "Coding Help", "\uD83D\uDCBB"),
-    Subject("writing", "Writing & Editing", "\u270D\uFE0F"),
-    Subject("research", "Research & Analysis", "\uD83D\uDD0E"),
 )
 
 const val MODEL_PATH = "/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm"
@@ -105,7 +99,7 @@ class EngineHolder {
     private var engine: Engine? = null
     private var conversation: Conversation? = null
 
-    suspend fun getConversation(context: Context, onStatus: (String) -> Unit): Conversation {
+    suspend fun getConversation(onStatus: (String) -> Unit): Conversation {
         conversation?.let { return it }
 
         return withContext(Dispatchers.IO) {
@@ -129,6 +123,10 @@ class EngineHolder {
             conversation = newConversation
             newConversation
         }
+    }
+
+    fun resetConversation() {
+        conversation = null
     }
 
     fun close() {
@@ -161,10 +159,7 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
                     translationY = 40f + drift * 160f
                     alpha = 0.25f
                 }
-                .background(
-                    Brush.radialGradient(listOf(NovaColors.Blue500, Color.Transparent)),
-                    shape = CircleShape
-                )
+                .background(Brush.radialGradient(listOf(NovaColors.Blue500, Color.Transparent)), shape = CircleShape)
         )
         Box(
             modifier = Modifier
@@ -175,10 +170,7 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
                     translationY = -40f - drift * 140f
                     alpha = 0.2f
                 }
-                .background(
-                    Brush.radialGradient(listOf(NovaColors.Cyan, Color.Transparent)),
-                    shape = CircleShape
-                )
+                .background(Brush.radialGradient(listOf(NovaColors.Cyan, Color.Transparent)), shape = CircleShape)
         )
     }
 }
@@ -187,89 +179,18 @@ fun AuroraBackground(modifier: Modifier = Modifier) {
 fun PulsingDot() {
     val transition = rememberInfiniteTransition(label = "dot")
     val scale by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
+        initialValue = 1f, targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "dotScale"
     )
     Box(
-        modifier = Modifier
-            .size(11.dp)
-            .scale(scale)
-            .clip(CircleShape)
+        modifier = Modifier.size(11.dp).scale(scale).clip(CircleShape)
             .background(Brush.radialGradient(listOf(NovaColors.Cyan, NovaColors.Blue500)))
     )
 }
 
 @Composable
-fun SubjectDropdown(subject: Subject, onSubjectChange: (Subject) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(NovaColors.Surface)
-                .border(1.dp, NovaColors.Line, RoundedCornerShape(10.dp))
-                .clickable { open = !open }
-                .padding(horizontal = 14.dp, vertical = 9.dp)
-        ) {
-            Text(subject.icon, fontSize = 14.sp)
-            Text(subject.label, color = NovaColors.Blue300, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
-            Icon(
-                imageVector = if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                contentDescription = null,
-                tint = NovaColors.Text1,
-                modifier = Modifier.size(16.dp)
-            )
-        }
-
-        if (open) {
-            Popup(
-                alignment = Alignment.TopEnd,
-                offset = androidx.compose.ui.unit.IntOffset(0, 130),
-                onDismissRequest = { open = false }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .width(230.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(NovaColors.Surface)
-                        .border(1.dp, NovaColors.Line, RoundedCornerShape(14.dp))
-                        .padding(8.dp)
-                ) {
-                    SUBJECTS.forEach { s ->
-                        val active = s.id == subject.id
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(if (active) NovaColors.Blue500.copy(alpha = 0.18f) else Color.Transparent)
-                                .clickable {
-                                    onSubjectChange(s)
-                                    open = false
-                                }
-                                .padding(horizontal = 11.dp, vertical = 10.dp)
-                        ) {
-                            Text(s.icon, fontSize = 14.sp)
-                            Text(s.label, fontSize = 13.5.sp, color = if (active) NovaColors.Text0 else NovaColors.Text1)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AppHeader(subject: Subject, onSubjectChange: (Subject) -> Unit, statusText: String) {
+fun AppHeader(sidebarOpen: Boolean, onToggleSidebar: () -> Unit, onNewChat: () -> Unit, statusText: String) {
     Column {
         Row(
             modifier = Modifier
@@ -281,21 +202,84 @@ fun AppHeader(subject: Subject, onSubjectChange: (Subject) -> Unit, statusText: 
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(NovaColors.Surface)
+                        .border(1.dp, NovaColors.Line, RoundedCornerShape(10.dp))
+                        .clickable(onClick = onToggleSidebar),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.Menu, contentDescription = "History", tint = NovaColors.Text1, modifier = Modifier.size(18.dp))
+                }
                 PulsingDot()
                 Text("Nova", color = NovaColors.Text0, fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
-            SubjectDropdown(subject, onSubjectChange)
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(NovaColors.Surface)
+                    .border(1.dp, NovaColors.Line, RoundedCornerShape(10.dp))
+                    .clickable(onClick = onNewChat),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "New chat", tint = NovaColors.Blue300, modifier = Modifier.size(18.dp))
+            }
         }
         if (statusText.isNotEmpty()) {
             Text(
-                statusText,
-                color = NovaColors.Text2,
-                fontSize = 11.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(NovaColors.Bg1)
-                    .padding(horizontal = 22.dp, vertical = 4.dp)
+                statusText, color = NovaColors.Text2, fontSize = 11.sp,
+                modifier = Modifier.fillMaxWidth().background(NovaColors.Bg1).padding(horizontal = 22.dp, vertical = 4.dp)
             )
+        }
+    }
+}
+
+@Composable
+fun Sidebar(
+    conversations: List<ConversationEntity>,
+    activeId: Long?,
+    onSelect: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(280.dp)
+            .fillMaxHeight()
+            .background(NovaColors.Bg1.copy(alpha = 0.97f))
+            .border(width = 1.dp, color = NovaColors.Line)
+    ) {
+        Text(
+            "HISTORY", color = NovaColors.Text1, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(18.dp, 18.dp, 18.dp, 10.dp)
+        )
+        LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
+            itemsIndexed(conversations) { _, c ->
+                val active = activeId == c.id
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (active) NovaColors.Surface2 else Color.Transparent)
+                        .clickable { onSelect(c.id) }
+                        .padding(horizontal = 12.dp, vertical = 11.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(c.title, color = NovaColors.Text0, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (c.summary.isNotEmpty()) {
+                            Text(c.summary, color = NovaColors.Text2, fontSize = 11.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    Icon(
+                        Icons.Filled.Delete, contentDescription = "Delete",
+                        tint = NovaColors.Text2, modifier = Modifier.size(16.dp).clickable { onDelete(c.id) }
+                    )
+                }
+            }
         }
     }
 }
@@ -303,10 +287,7 @@ fun AppHeader(subject: Subject, onSubjectChange: (Subject) -> Unit, statusText: 
 @Composable
 fun ChatMessageRow(msg: ChatMsg) {
     val isUser = msg.role == Role.USER
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
         if (!isUser) Avatar(isUser = false)
         Box(
             modifier = Modifier
@@ -323,8 +304,7 @@ fun ChatMessageRow(msg: ChatMsg) {
             Text(
                 msg.text + if (msg.streaming) " \u258C" else "",
                 color = if (isUser) Color.White else NovaColors.Text0,
-                fontSize = 14.5.sp,
-                lineHeight = 22.sp
+                fontSize = 14.5.sp, lineHeight = 22.sp
             )
         }
         if (isUser) Avatar(isUser = true)
@@ -353,80 +333,46 @@ fun TypingIndicator(statusText: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Avatar(isUser = false)
         Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
-                .background(NovaColors.Surface)
-                .border(1.dp, NovaColors.Line, RoundedCornerShape(16.dp))
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(NovaColors.Surface)
+                .border(1.dp, NovaColors.Line, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             repeat(3) { i ->
                 val transition = rememberInfiniteTransition(label = "dot$i")
                 val bounce by transition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = -6f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1200, delayMillis = i * 150, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
+                    initialValue = 0f, targetValue = -6f,
+                    animationSpec = infiniteRepeatable(tween(1200, delayMillis = i * 150, easing = FastOutSlowInEasing), RepeatMode.Reverse),
                     label = "bounce$i"
                 )
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .graphicsLayer { translationY = bounce }
-                        .clip(CircleShape)
-                        .background(NovaColors.Blue300)
-                )
+                Box(modifier = Modifier.size(7.dp).graphicsLayer { translationY = bounce }.clip(CircleShape).background(NovaColors.Blue300))
             }
-            if (statusText.isNotEmpty()) {
-                Text(statusText, color = NovaColors.Text2, fontSize = 11.sp)
-            }
+            if (statusText.isNotEmpty()) Text(statusText, color = NovaColors.Text2, fontSize = 11.sp)
         }
     }
 }
 
 @Composable
-fun InputArea(
-    input: String,
-    onInputChange: (String) -> Unit,
-    enabled: Boolean,
-    placeholder: String,
-    onSend: () -> Unit
-) {
+fun InputArea(input: String, onInputChange: (String) -> Unit, enabled: Boolean, onSend: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(18.dp, 14.dp, 18.dp, 20.dp)) {
         Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(NovaColors.Surface)
+            verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(NovaColors.Surface)
                 .border(1.dp, NovaColors.Line, RoundedCornerShape(16.dp))
                 .padding(start = 16.dp, end = 9.dp, top = 9.dp, bottom = 9.dp)
         ) {
             TextField(
-                value = input,
-                onValueChange = onInputChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(placeholder, color = NovaColors.Text2, fontSize = 14.5.sp) },
+                value = input, onValueChange = onInputChange, modifier = Modifier.weight(1f),
+                placeholder = { Text("Message Nova...", color = NovaColors.Text2, fontSize = 14.5.sp) },
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = NovaColors.Text0,
-                    unfocusedTextColor = NovaColors.Text0
+                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                    focusedTextColor = NovaColors.Text0, unfocusedTextColor = NovaColors.Text0
                 ),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                maxLines = 6
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), maxLines = 6
             )
             val canSend = input.isNotBlank() && enabled
             Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(11.dp))
+                modifier = Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
                     .background(
                         if (canSend) Brush.linearGradient(listOf(NovaColors.Blue500, NovaColors.Cyan))
                         else Brush.linearGradient(listOf(NovaColors.Line, NovaColors.Line))
@@ -438,9 +384,7 @@ fun InputArea(
             }
         }
         Text(
-            "Runs fully on-device. Nova can make mistakes.",
-            color = NovaColors.Text2,
-            fontSize = 11.sp,
+            "Runs fully on-device. Nova can make mistakes.", color = NovaColors.Text2, fontSize = 11.sp,
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
@@ -450,32 +394,62 @@ fun InputArea(
 @Composable
 fun NovaApp() {
     val context = LocalContext.current
-    var subject by remember { mutableStateOf(SUBJECTS[0]) }
+    val db = remember { AppDatabase.getInstance(context) }
     val messages = remember { mutableStateListOf<ChatMsg>() }
     var input by rememberSaveable { mutableStateOf("") }
     var thinking by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("") }
+    var sidebarOpen by remember { mutableStateOf(false) }
+    var activeConversationId by remember { mutableStateOf<Long?>(null) }
+    val conversations = remember { mutableStateListOf<ConversationEntity>() }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val engineHolder = remember { EngineHolder() }
 
+    LaunchedEffect(Unit) {
+        db.conversationDao().getAllConversations().collect { list ->
+            conversations.clear()
+            conversations.addAll(list)
+        }
+    }
+
     val isStreaming = messages.isNotEmpty() && messages.last().streaming
 
-    fun revealReply(fullText: String) {
-        messages.add(ChatMsg(Role.AI, "", streaming = true))
-        val words = fullText.split(" ")
+    suspend fun ensureConversationRow(firstUserText: String): Long {
+        activeConversationId?.let { return it }
+        val now = System.currentTimeMillis()
+        val title = firstUserText.take(40)
+        val id = db.conversationDao().insertConversation(
+            ConversationEntity(title = title, summary = "", createdAt = now, updatedAt = now)
+        )
+        activeConversationId = id
+        return id
+    }
+
+    fun loadConversation(id: Long) {
         scope.launch {
-            var i = 0
-            var acc = ""
-            while (i < words.size) {
-                val chunkSize = 2 + Random.nextInt(3)
-                val next = words.subList(i, minOf(i + chunkSize, words.size)).joinToString(" ")
-                acc = if (acc.isEmpty()) next else "$acc $next"
-                i += chunkSize
-                val last = messages.removeAt(messages.size - 1)
-                messages.add(last.copy(text = acc, streaming = i < words.size))
-                delay(25 + Random.nextLong(30))
+            activeConversationId = id
+            engineHolder.resetConversation()
+            messages.clear()
+            val saved = db.messageDao().getMessagesForConversationOnce(id)
+            saved.forEach { m ->
+                messages.add(ChatMsg(role = if (m.role == "USER") Role.USER else Role.AI, text = m.text))
             }
+            sidebarOpen = false
+        }
+    }
+
+    fun newChat() {
+        activeConversationId = null
+        engineHolder.resetConversation()
+        messages.clear()
+        sidebarOpen = false
+    }
+
+    fun deleteConversation(id: Long) {
+        scope.launch {
+            db.conversationDao().deleteConversation(id)
+            if (activeConversationId == id) newChat()
         }
     }
 
@@ -489,16 +463,51 @@ fun NovaApp() {
 
         scope.launch {
             try {
-                val conversation = engineHolder.getConversation(context) { status ->
-                    statusText = status
-                }
+                val convId = ensureConversationRow(text)
+                db.messageDao().insertMessage(
+                    MessageEntity(conversationId = convId, role = "USER", text = text, createdAt = System.currentTimeMillis())
+                )
+
+                val conversation = engineHolder.getConversation { status -> statusText = status }
                 statusText = "Generating..."
-                val response = withContext(Dispatchers.IO) {
-                    conversation.sendMessage(text)
-                }
+
+                messages.add(ChatMsg(Role.AI, "", streaming = true))
                 thinking = false
+
+                var fullResponse = ""
+                withContext(Dispatchers.IO) {
+                    conversation.sendMessageAsync(text)
+                        .catch { e ->
+                            withContext(Dispatchers.Main) {
+                                val last = messages.removeAt(messages.size - 1)
+                                messages.add(last.copy(text = "Error: ${e.message}", streaming = false))
+                            }
+                        }
+                        .collect { chunk ->
+                            fullResponse += chunk.toString()
+                            withContext(Dispatchers.Main) {
+                                val last = messages.removeAt(messages.size - 1)
+                                messages.add(last.copy(text = fullResponse, streaming = true))
+                            }
+                        }
+                }
+
+                if (messages.isNotEmpty() && messages.last().streaming) {
+                    val last = messages.removeAt(messages.size - 1)
+                    messages.add(last.copy(streaming = false))
+                }
                 statusText = ""
-                revealReply(response.toString())
+
+                db.messageDao().insertMessage(
+                    MessageEntity(conversationId = convId, role = "AI", text = fullResponse, createdAt = System.currentTimeMillis())
+                )
+                db.conversationDao().updateConversation(
+                    db.conversationDao().getConversation(convId)!!.copy(
+                        summary = fullResponse.take(80),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+
             } catch (e: Exception) {
                 thinking = false
                 statusText = ""
@@ -519,55 +528,61 @@ fun NovaApp() {
         AuroraBackground()
 
         Column(modifier = Modifier.fillMaxSize()) {
-            AppHeader(subject = subject, onSubjectChange = { subject = it }, statusText = statusText)
+            AppHeader(
+                sidebarOpen = sidebarOpen,
+                onToggleSidebar = { sidebarOpen = !sidebarOpen },
+                onNewChat = { newChat() },
+                statusText = statusText
+            )
 
-            Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    if (messages.isEmpty()) {
-                        Column(
-                            modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Brush.linearGradient(listOf(NovaColors.Blue500, NovaColors.Cyan))),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("\u2726", fontSize = 26.sp)
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Text("Ask Nova anything", color = NovaColors.Text0, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "Running Gemma3-1B fully on-device. First response may take a few seconds while the model loads.",
-                                color = NovaColors.Text2,
-                                fontSize = 13.5.sp,
-                                lineHeight = 20.sp,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(18.dp, 26.dp, 18.dp, 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(18.dp)
-                        ) {
-                            itemsIndexed(messages) { _, m -> ChatMessageRow(m) }
-                            if (thinking) item { TypingIndicator(statusText) }
-                        }
-                    }
+            Row(modifier = Modifier.fillMaxSize()) {
+                AnimatedVisibility(visible = sidebarOpen) {
+                    Sidebar(
+                        conversations = conversations,
+                        activeId = activeConversationId,
+                        onSelect = { loadConversation(it) },
+                        onDelete = { deleteConversation(it) },
+                    )
                 }
 
-                InputArea(
-                    input = input,
-                    onInputChange = { input = it },
-                    enabled = !thinking && !isStreaming,
-                    placeholder = "Message Nova...",
-                    onSend = { sendMessage() }
-                )
+                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        if (messages.isEmpty()) {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp))
+                                        .background(Brush.linearGradient(listOf(NovaColors.Blue500, NovaColors.Cyan))),
+                                    contentAlignment = Alignment.Center
+                                ) { Text("\u2726", fontSize = 26.sp) }
+                                Spacer(Modifier.height(16.dp))
+                                Text("Ask Nova anything", color = NovaColors.Text0, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "Running Gemma3-1B fully on-device.",
+                                    color = NovaColors.Text2, fontSize = 13.5.sp, lineHeight = 20.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                state = listState, modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(18.dp, 26.dp, 18.dp, 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(18.dp)
+                            ) {
+                                itemsIndexed(messages) { _, m -> ChatMessageRow(m) }
+                                if (thinking) item { TypingIndicator(statusText) }
+                            }
+                        }
+                    }
+
+                    InputArea(
+                        input = input, onInputChange = { input = it },
+                        enabled = !thinking && !isStreaming, onSend = { sendMessage() }
+                    )
+                }
             }
         }
     }
