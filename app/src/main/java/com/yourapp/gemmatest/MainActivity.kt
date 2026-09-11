@@ -50,10 +50,7 @@ import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-import com.google.ai.edge.litertlm.RepetitionPenaltyConfig
-import com.google.ai.edge.litertlm.SamplerParams
-import com.google.ai.edge.litertlm.SamplerType
-import com.google.ai.edge.litertlm.SessionConfig
+import com.google.ai.edge.litertlm.SamplerConfig
 import com.yourapp.gemmatest.data.AppDatabase
 import com.yourapp.gemmatest.data.ConversationEntity
 import com.yourapp.gemmatest.data.MessageEntity
@@ -188,15 +185,7 @@ class EngineHolder {
             onStatus("Starting conversation...")
             val newConversation = newEngine.createConversation(
                 ConversationConfig(
-                    sessionConfig = SessionConfig(
-                        samplerParams = SamplerParams(
-                            type = SamplerType.TOP_K,
-                            k = 40,
-                            p = 0.9,
-                            temperature = 0.8,
-                        ),
-                        repetitionPenaltyConfig = RepetitionPenaltyConfig(penalty = 1.3f),
-                    )
+                    samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 1.0)
                 )
             )
             conversation = newConversation
@@ -504,7 +493,7 @@ fun MarkdownText(raw: String, textColor: Color, streaming: Boolean = false) {
                     Row {
                         Text("\u2022  ", color = textColor, fontSize = 14.5.sp)
                         Text(
-                            parseInlineMarkdown(block.text) + (if (isLast && streaming) " \u258C" else ""),
+                            parseInlineMarkdown(block.text + (if (isLast && streaming) " \u258C" else "")),
                             color = textColor, fontSize = 14.5.sp, lineHeight = 21.sp
                         )
                     }
