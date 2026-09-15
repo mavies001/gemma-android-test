@@ -9,6 +9,7 @@
         android:theme="@style/Theme.GemmaTest">
         <activity
             android:name=".MainActivity"
+            android:theme="@style/Theme.Nova.Splash"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

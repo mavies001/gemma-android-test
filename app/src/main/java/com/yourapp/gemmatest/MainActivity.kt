@@ -16,13 +16,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.core.splashscreen.installSplashScreen
 import com.yourapp.gemmatest.theme.DarkNova
 import com.yourapp.gemmatest.theme.LightNova
 import com.yourapp.gemmatest.theme.LocalNovaColors
 import com.yourapp.gemmatest.ui.NovaApp
+import com.yourapp.gemmatest.ui.NovaSplashScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // must be called before super.onCreate() per the core-splashscreen API contract
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         if (!Environment.isExternalStorageManager()) {
@@ -34,6 +38,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             var useSystemTheme by rememberSaveable { mutableStateOf(true) }
             var manualDark by rememberSaveable { mutableStateOf(true) }
+            var showSplash by rememberSaveable { mutableStateOf(true) }
             val systemDark = isSystemInDarkTheme()
             val isDark = if (useSystemTheme) systemDark else manualDark
             val colors = if (isDark) DarkNova else LightNova
@@ -46,13 +51,17 @@ class MainActivity : ComponentActivity() {
 
             MaterialTheme(colorScheme = materialScheme) {
                 CompositionLocalProvider(LocalNovaColors provides colors) {
-                    NovaApp(
-                        isDark = isDark,
-                        onToggleTheme = {
-                            useSystemTheme = false
-                            manualDark = !isDark
-                        }
-                    )
+                    if (showSplash) {
+                        NovaSplashScreen(onFinished = { showSplash = false })
+                    } else {
+                        NovaApp(
+                            isDark = isDark,
+                            onToggleTheme = {
+                                useSystemTheme = false
+                                manualDark = !isDark
+                            }
+                        )
+                    }
                 }
             }
         }

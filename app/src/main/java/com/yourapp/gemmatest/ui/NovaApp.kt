@@ -141,15 +141,18 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
-        if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1)
+    // reverseLayout means index 0 is pinned to the BOTTOM of the viewport,
+    // regardless of message count or content height — this is what fixes
+    // the scroll-to-top-of-growing-message bug and the few-messages bug
+    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, waitingForFirstToken) {
+        if (messages.isNotEmpty() || waitingForFirstToken) listState.scrollToItem(0)
     }
 
     DisposableEffect(Unit) {
         onDispose { repository.close() }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
         AuroraBackground()
 
         ModalNavigationDrawer(
@@ -199,11 +202,12 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                     } else {
                         LazyColumn(
                             state = listState, modifier = Modifier.fillMaxSize(),
+                            reverseLayout = true,
                             contentPadding = PaddingValues(18.dp, 26.dp, 18.dp, 10.dp),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
-                            itemsIndexed(messages) { _, m -> ChatMessageRow(m) }
                             if (waitingForFirstToken) item { TypingIndicator() }
+                            itemsIndexed(messages.asReversed()) { _, m -> ChatMessageRow(m) }
                         }
                     }
                 }
