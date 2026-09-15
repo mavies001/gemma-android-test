@@ -16,7 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.core.splashscreen.installSplashScreen
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.yourapp.gemmatest.theme.DarkNova
 import com.yourapp.gemmatest.theme.LightNova
 import com.yourapp.gemmatest.theme.LocalNovaColors
