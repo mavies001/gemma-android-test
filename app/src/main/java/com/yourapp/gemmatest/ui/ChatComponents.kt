@@ -9,8 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.composed
-import androidx.compose.foundation.composed
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,7 +40,7 @@ import com.yourapp.gemmatest.theme.LocalNovaColors
 // shimmer sweep modifier — animates a lighter gradient band across whatever
 // it's applied to, on an infinite loop, used for skeleton placeholders
 @Composable
-private fun Modifier.shimmerEffect(baseColor: Color, highlightColor: Color): Modifier = composed {
+private fun Modifier.shimmerEffect(baseColor: Color, highlightColor: Color): Modifier {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val translateAnim by transition.animateFloat(
         initialValue = -400f,
@@ -53,7 +51,7 @@ private fun Modifier.shimmerEffect(baseColor: Color, highlightColor: Color): Mod
         ),
         label = "shimmerTranslate",
     )
-    background(
+    return this.background(
         Brush.linearGradient(
             colors = listOf(baseColor, highlightColor, baseColor),
             start = Offset(translateAnim, 0f),
