@@ -44,7 +44,8 @@ val SUBJECTS = listOf("General", "Code", "Writing", "Study")
 fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
     val colors = LocalNovaColors.current
     val context = LocalContext.current
-    val repository = remember { ChatRepository(context) }
+    val application = context.applicationContext as com.yourapp.gemmatest.NovaApplication
+    val repository = remember { ChatRepository(context, application.engineHolder) }
     val messages = remember { mutableStateListOf<ChatMsg>() }
     var input by rememberSaveable { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }

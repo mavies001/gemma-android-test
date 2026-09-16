@@ -7,7 +7,10 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -19,29 +22,59 @@ class EngineHolder {
     private var engine: Engine? = null
     private var conversation: Conversation? = null
 
+    private val engineInitMutex = Mutex()
+    private var engineInitDeferred: CompletableDeferred<Engine>? = null
+
+    private suspend fun ensureEngine(): Engine {
+        engine?.let { return it }
+
+        engineInitMutex.withLock {
+            engine?.let { return it }
+            val existing = engineInitDeferred
+            if (existing != null) return existing.await()
+
+            val deferred = CompletableDeferred<Engine>()
+            engineInitDeferred = deferred
+
+            return withContext(Dispatchers.IO) {
+                try {
+                    val modelFile = File(MODEL_PATH)
+                    if (!modelFile.exists()) {
+                        throw IllegalStateException("Model file not found at $MODEL_PATH")
+                    }
+                    val config = EngineConfig(
+                        modelPath = MODEL_PATH,
+                        backend = Backend.CPU(),
+                        maxNumTokens = 1024,
+                    )
+                    val newEngine = Engine(config)
+                    newEngine.initialize()
+                    engine = newEngine
+                    deferred.complete(newEngine)
+                    newEngine
+                } catch (e: Exception) {
+                    deferred.completeExceptionally(e)
+                    engineInitDeferred = null
+                    throw e
+                }
+            }
+        }
+    }
+
+    suspend fun warmup() {
+        ensureEngine()
+    }
+
     suspend fun getConversation(history: List<ChatTurn> = emptyList()): Conversation {
         conversation?.let { return it }
 
+        val readyEngine = ensureEngine()
+
         return withContext(Dispatchers.IO) {
-            val modelFile = File(MODEL_PATH)
-            if (!modelFile.exists()) {
-                throw IllegalStateException("Model file not found at $MODEL_PATH")
-            }
-
-            val config = EngineConfig(
-                modelPath = MODEL_PATH,
-                backend = Backend.CPU(),
-                maxNumTokens = 1024,
-            )
-            val newEngine = Engine(config)
-            newEngine.initialize()
-            engine = newEngine
-
             val initialMessages = history.map {
                 if (it.role == "USER") Message.user(it.text) else Message.model(it.text)
             }
-
-            val newConversation = newEngine.createConversation(
+            val newConversation = readyEngine.createConversation(
                 ConversationConfig(
                     samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 1.0),
                     initialMessages = initialMessages,
@@ -60,5 +93,6 @@ class EngineHolder {
         engine?.close()
         engine = null
         conversation = null
+        engineInitDeferred = null
     }
 }

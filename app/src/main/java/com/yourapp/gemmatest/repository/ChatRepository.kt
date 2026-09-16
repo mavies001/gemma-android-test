@@ -14,10 +14,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.withContext
 
-class ChatRepository(context: Context) {
+class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
     private val appContext = context.applicationContext
     private val db = AppDatabase.getInstance(appContext)
-    private val engineHolder = EngineHolder()
     private val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
 
     fun conversationsFlow(): Flow<List<ConversationEntity>> = db.conversationDao().getAllConversations()

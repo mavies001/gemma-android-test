@@ -1,8 +1,14 @@
 package com.yourapp.gemmatest.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.composed
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -14,17 +20,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -33,19 +36,41 @@ import com.yourapp.gemmatest.markdown.MarkdownText
 import com.yourapp.gemmatest.model.ChatMsg
 import com.yourapp.gemmatest.model.Role
 import com.yourapp.gemmatest.theme.LocalNovaColors
-import kotlinx.coroutines.delay
+
+// shimmer sweep modifier — animates a lighter gradient band across whatever
+// it's applied to, on an infinite loop, used for skeleton placeholders
+@Composable
+private fun Modifier.shimmerEffect(baseColor: Color, highlightColor: Color): Modifier = composed {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnim by transition.animateFloat(
+        initialValue = -400f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "shimmerTranslate",
+    )
+    background(
+        Brush.linearGradient(
+            colors = listOf(baseColor, highlightColor, baseColor),
+            start = Offset(translateAnim, 0f),
+            end = Offset(translateAnim + 300f, 300f),
+        )
+    )
+}
 
 @Composable
 fun AnimatedDots() {
     val colors = LocalNovaColors.current
-    var dotCount by remember { mutableStateOf(1) }
-    LaunchedEffect(Unit) {
+    var dotCount by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(1) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
         while (true) {
-            delay(400)
+            kotlinx.coroutines.delay(400)
             dotCount = (dotCount % 3) + 1
         }
     }
-    Text(".".repeat(dotCount), color = colors.Text2, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+    Text(".".repeat(dotCount), color = colors.Text2, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
 }
 
 @Composable
@@ -73,10 +98,38 @@ fun ChatMessageRow(msg: ChatMsg) {
     }
 }
 
+// skeleton placeholder shown while waiting for the first token — three
+// shimmering lines shaped roughly like an incoming paragraph, no text at all
 @Composable
 fun TypingIndicator() {
-    Row(modifier = Modifier.padding(vertical = 4.dp)) {
-        AnimatedDots()
+    val colors = LocalNovaColors.current
+    val base = colors.Line
+    val highlight = colors.Text2.copy(alpha = 0.35f)
+    Column(
+        modifier = Modifier.padding(vertical = 4.dp).widthIn(max = 320.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.75f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .shimmerEffect(base, highlight)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.55f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .shimmerEffect(base, highlight)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.35f)
+                .height(14.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .shimmerEffect(base, highlight)
+        )
     }
 }
 
@@ -109,8 +162,24 @@ fun InputArea(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), maxLines = 6
             )
             val canSend = input.isNotBlank() && !isGenerating
+
+            // pulse animation on the send/stop button while generating
+            val pulseTransition = rememberInfiniteTransition(label = "sendPulse")
+            val pulseScale by pulseTransition.animateFloat(
+                initialValue = 1f,
+                targetValue = 1.12f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(700, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "sendPulseScale",
+            )
+
             Box(
-                modifier = Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
+                modifier = Modifier
+                    .size(38.dp)
+                    .scale(if (isGenerating) pulseScale else 1f)
+                    .clip(RoundedCornerShape(11.dp))
                     .background(
                         if (canSend || isGenerating) Brush.linearGradient(listOf(colors.Blue500, colors.Cyan))
                         else Brush.linearGradient(listOf(colors.Line, colors.Line))
