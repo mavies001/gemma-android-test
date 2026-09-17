@@ -85,6 +85,28 @@ class EngineHolder {
         }
     }
 
+    // one-off, separate Conversation object — deliberately NOT stored in
+    // `conversation`, so it never touches the main chat's context/KV cache.
+    suspend fun generateSummary(userText: String, aiText: String): String {
+        val readyEngine = ensureEngine()
+        return withContext(Dispatchers.IO) {
+            val summaryConversation = readyEngine.createConversation(
+                ConversationConfig(
+                    samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.3),
+                    initialMessages = emptyList(),
+                )
+            )
+            val prompt = "In 4 to 6 words, write a short title summarizing this exchange. " +
+                "Respond with only the title, no punctuation, no quotes.
+
+" +
+                "User: $userText
+Assistant: $aiText"
+            val response = summaryConversation.sendMessage(prompt)
+            response.toString().trim().take(60)
+        }
+    }
+
     fun resetConversation() {
         conversation = null
     }
