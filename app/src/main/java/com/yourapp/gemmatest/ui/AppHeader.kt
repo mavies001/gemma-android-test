@@ -1,6 +1,7 @@
 package com.yourapp.gemmatest.ui
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,9 +23,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yourapp.gemmatest.R
 import com.yourapp.gemmatest.theme.LocalNovaColors
 
 @Composable
@@ -115,8 +119,13 @@ fun AppHeader(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HeaderIconButton(icon = Icons.Filled.Menu, contentDescription = "History", onClick = onToggleSidebar)
-                PulsingDot()
-                Text("Nova", color = colors.Text0, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Image(
+                    painter = painterResource(id = R.drawable.logo_illuminated),
+                    contentDescription = "Irachat logo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(26.dp).clip(RoundedCornerShape(6.dp))
+                )
+                Text("Irachat", color = colors.Text0, fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(

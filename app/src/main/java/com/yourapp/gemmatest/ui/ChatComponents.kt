@@ -196,7 +196,7 @@ fun InputArea(
             }
         }
         Text(
-            "Runs fully on-device. Nova can make mistakes.", color = colors.Text2, fontSize = 11.sp,
+            "Irachat can make mistakes.", color = colors.Text2, fontSize = 11.sp,
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             textAlign = TextAlign.Center
         )

@@ -8,6 +8,7 @@ data class ConversationEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val summary: String,
+    val subject: String = "General",
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -64,7 +65,7 @@ interface MessageDao {
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -81,7 +82,11 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "gemmatest.db"
-                ).build()
+                )
+                    // no migration path built yet — wipes local history once on this
+                    // version bump (1 -> 2, adding the subject column) rather than crashing
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

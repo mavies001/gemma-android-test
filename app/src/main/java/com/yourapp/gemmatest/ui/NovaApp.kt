@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yourapp.gemmatest.NovaApplication
 import com.yourapp.gemmatest.data.ConversationEntity
 import com.yourapp.gemmatest.model.ChatMsg
 import com.yourapp.gemmatest.model.Role
@@ -38,13 +39,13 @@ import com.yourapp.gemmatest.theme.LocalNovaColors
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-val SUBJECTS = listOf("General", "Code", "Writing", "Study")
+val SUBJECTS = listOf("General", "Physical Science", "Biological Science", "Medical Field", "Arts and Humanities")
 
 @Composable
 fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
     val colors = LocalNovaColors.current
     val context = LocalContext.current
-    val application = context.applicationContext as com.yourapp.gemmatest.NovaApplication
+    val application = context.applicationContext as NovaApplication
     val repository = remember { ChatRepository(context, application.engineHolder) }
     val messages = remember { mutableStateListOf<ChatMsg>() }
     var input by rememberSaveable { mutableStateOf("") }
@@ -77,6 +78,17 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
 
     fun newChat() {
         activeConversationId = null
+        currentSubject = SUBJECTS.first()
+        repository.resetActiveConversation()
+        messages.clear()
+        scope.launch { drawerState.close() }
+    }
+
+    // tapping a subject always starts a NEW conversation tagged to it —
+    // each subject builds its own history rather than resuming one thread
+    fun enterSubject(subject: String) {
+        activeConversationId = null
+        currentSubject = subject
         repository.resetActiveConversation()
         messages.clear()
         scope.launch { drawerState.close() }
@@ -111,6 +123,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         generationJob = scope.launch {
             repository.sendMessage(
                 text = text,
+                subject = currentSubject,
                 activeConversationId = activeConversationId,
                 onConversationCreated = { id -> activeConversationId = id },
                 onToken = { cumulative ->
@@ -142,9 +155,6 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    // reverseLayout means index 0 is pinned to the BOTTOM of the viewport,
-    // regardless of message count or content height — this is what fixes
-    // the scroll-to-top-of-growing-message bug and the few-messages bug
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, waitingForFirstToken) {
         if (messages.isNotEmpty() || waitingForFirstToken) listState.scrollToItem(0)
     }
@@ -178,7 +188,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                     isGenerating = isGenerating,
                 )
 
-                SubjectRail(subjects = SUBJECTS, selected = currentSubject, onSelect = { currentSubject = it })
+                SubjectDropdown(subjects = SUBJECTS, selected = currentSubject, onSelect = { enterSubject(it) })
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     if (messages.isEmpty()) {
@@ -192,10 +202,10 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                                 contentAlignment = Alignment.Center
                             ) { Text("\u2726", fontSize = 26.sp) }
                             Spacer(Modifier.height(16.dp))
-                            Text("Ask Nova anything", color = colors.Text0, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Ask Irachat anything", color = colors.Text0, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "Running Gemma3-1B fully on-device.",
+                                "Pick a subject above, or just start typing.",
                                 color = colors.Text2, fontSize = 13.5.sp, lineHeight = 20.sp,
                                 textAlign = TextAlign.Center
                             )

@@ -6,7 +6,7 @@
     <application
         android:name=".NovaApplication"
         android:allowBackup="true"
-        android:label="GemmaTest"
+        android:label="Irachat"
         android:theme="@style/Theme.GemmaTest">
         <activity
             android:name=".MainActivity"
