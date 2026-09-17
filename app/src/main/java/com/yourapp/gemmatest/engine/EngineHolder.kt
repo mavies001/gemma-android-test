@@ -97,11 +97,8 @@ class EngineHolder {
                 )
             )
             val prompt = "In 4 to 6 words, write a short title summarizing this exchange. " +
-                "Respond with only the title, no punctuation, no quotes.
-
-" +
-                "User: $userText
-Assistant: $aiText"
+                "Respond with only the title, no punctuation, no quotes.\n\n" +
+                "User: $userText\nAssistant: $aiText"
             val response = summaryConversation.sendMessage(prompt)
             response.toString().trim().take(60)
         }
