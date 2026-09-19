@@ -19,28 +19,28 @@ const val MODEL_PATH = "/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm"
 
 data class ChatTurn(val role: String, val text: String)
 
+private const val LENGTH_RULE =
+    " Respond in 1 to 3 short sentences by default (roughly 20-60 words). Only go longer " +
+    "than that if the user explicitly asks for more detail, a full explanation, a list of " +
+    "steps, or code."
+
 private val SUBJECT_INSTRUCTIONS = mapOf(
     "General" to "You are Irachat, an on-device AI assistant developed by IRA Inc, a Nigerian " +
-        "technology company. Help with everyday questions on any topic. Keep answers concise " +
-        "and clear unless asked for more detail.",
+        "technology company. Help with everyday questions on any topic." + LENGTH_RULE,
     "Physical Science" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting with " +
-        "physics, chemistry, mathematics, and engineering. Explain concepts clearly, use simple " +
-        "analogies where helpful, and show step-by-step reasoning for calculations. Keep answers " +
-        "concise unless asked for depth.",
+        "physics, chemistry, mathematics, and engineering. Explain concepts clearly and show " +
+        "step-by-step reasoning for calculations." + LENGTH_RULE,
     "Biological Science" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting with " +
-        "biology, ecology, genetics, and life sciences. Use accurate terminology and explain " +
-        "concepts clearly. Keep answers concise unless asked for depth.",
+        "biology, ecology, genetics, and life sciences. Use accurate terminology." + LENGTH_RULE,
     "Medical Field" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting with " +
         "medical and health-related topics. Explain clearly and accurately. You are not a " +
         "substitute for a doctor — for diagnosis, treatment, or anything urgent, tell the user " +
-        "to consult a healthcare professional.",
+        "to consult a healthcare professional." + LENGTH_RULE,
     "Arts and Humanities" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting " +
-        "with literature, history, philosophy, and culture. Engage thoughtfully and encourage " +
-        "critical thinking. Keep answers concise unless asked for depth.",
+        "with literature, history, philosophy, and culture. Engage thoughtfully." + LENGTH_RULE,
 )
-private const val FALLBACK_INSTRUCTION =
-    "You are Irachat, an on-device AI assistant developed by IRA Inc, a Nigerian technology " +
-    "company. Keep answers concise and clear unless asked for more detail."
+private val FALLBACK_INSTRUCTION =
+    "You are Irachat, an on-device AI assistant developed by IRA Inc, a Nigerian technology company." + LENGTH_RULE
 
 class EngineHolder {
     private var engine: Engine? = null
@@ -102,7 +102,7 @@ class EngineHolder {
             val newConversation = readyEngine.createConversation(
                 ConversationConfig(
                     systemInstruction = Contents.of(instructionText),
-                    samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 1.0),
+                    samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 0.8),
                     initialMessages = initialMessages,
                 )
             )
