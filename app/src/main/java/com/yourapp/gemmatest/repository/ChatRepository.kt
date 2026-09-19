@@ -40,13 +40,7 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
         if (activeId != null) return activeId
         val now = System.currentTimeMillis()
         return db.conversationDao().insertConversation(
-            ConversationEntity(
-                title = firstUserText.take(40),
-                summary = "",
-                subject = subject,
-                createdAt = now,
-                updatedAt = now,
-            )
+            ConversationEntity(title = firstUserText.take(40), summary = "", subject = subject, createdAt = now, updatedAt = now)
         )
     }
 
@@ -69,12 +63,13 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
         activeConversationId: Long?,
         onConversationCreated: (Long) -> Unit,
         onToken: (String) -> Unit,
-        onError: (String) -> Unit,
+        onError: (originalText: String, conversationWasDeleted: Boolean) -> Unit,
     ) {
+        val wasNewConversation = activeConversationId == null
         val convId = ensureConversationRow(activeConversationId, text, subject)
-        if (activeConversationId == null) onConversationCreated(convId)
+        if (wasNewConversation) onConversationCreated(convId)
 
-        db.messageDao().insertMessage(
+        val userMessageId = db.messageDao().insertMessage(
             MessageEntity(conversationId = convId, role = "USER", text = text, createdAt = System.currentTimeMillis())
         )
 
@@ -90,16 +85,11 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
 
         var fullResponse = ""
         var errored = false
-        var errorMessage = ""
         try {
-            val conversation = engineHolder.getConversation(history = priorTurns)
+            val conversation = engineHolder.getConversation(history = priorTurns, subject = subject)
             withContext(Dispatchers.IO) {
                 conversation.sendMessageAsync(text)
-                    .catch { e ->
-                        errored = true
-                        errorMessage = e.message ?: "Unknown error"
-                        onError(errorMessage)
-                    }
+                    .catch { errored = true }
                     .collect { chunk ->
                         fullResponse += chunk.toString()
                         onToken(fullResponse)
@@ -110,22 +100,30 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
             GenerationForegroundService.stop(appContext)
         }
 
-        val aiText = if (errored) "Error: $errorMessage" else fullResponse
+        if (errored) {
+            // roll back the whole failed exchange — never leave an unpaired
+            // message in the DB, so alternation can never break
+            db.messageDao().deleteMessage(userMessageId)
+            if (wasNewConversation) {
+                db.conversationDao().deleteConversation(convId)
+            }
+            onError(text, wasNewConversation)
+            return
+        }
+
         db.messageDao().insertMessage(
-            MessageEntity(conversationId = convId, role = "AI", text = aiText, createdAt = System.currentTimeMillis())
+            MessageEntity(conversationId = convId, role = "AI", text = fullResponse, createdAt = System.currentTimeMillis())
         )
 
-        if (!errored) {
-            val summaryText = try {
-                engineHolder.generateSummary(text, fullResponse)
-            } catch (e: Exception) {
-                fullResponse.take(60)
-            }
-            db.conversationDao().getConversation(convId)?.let { conv ->
-                db.conversationDao().updateConversation(
-                    conv.copy(summary = summaryText, updatedAt = System.currentTimeMillis())
-                )
-            }
+        val summaryText = try {
+            engineHolder.generateSummary(text, fullResponse)
+        } catch (e: Exception) {
+            fullResponse.take(60)
+        }
+        db.conversationDao().getConversation(convId)?.let { conv ->
+            db.conversationDao().updateConversation(
+                conv.copy(summary = summaryText, updatedAt = System.currentTimeMillis())
+            )
         }
     }
 

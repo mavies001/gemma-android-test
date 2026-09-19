@@ -1,6 +1,7 @@
 package com.yourapp.gemmatest.engine
 
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
@@ -17,6 +18,29 @@ import java.io.File
 const val MODEL_PATH = "/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm"
 
 data class ChatTurn(val role: String, val text: String)
+
+private val SUBJECT_INSTRUCTIONS = mapOf(
+    "General" to "You are Irachat, an on-device AI assistant developed by IRA Inc, a Nigerian " +
+        "technology company. Help with everyday questions on any topic. Keep answers concise " +
+        "and clear unless asked for more detail.",
+    "Physical Science" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting with " +
+        "physics, chemistry, mathematics, and engineering. Explain concepts clearly, use simple " +
+        "analogies where helpful, and show step-by-step reasoning for calculations. Keep answers " +
+        "concise unless asked for depth.",
+    "Biological Science" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting with " +
+        "biology, ecology, genetics, and life sciences. Use accurate terminology and explain " +
+        "concepts clearly. Keep answers concise unless asked for depth.",
+    "Medical Field" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting with " +
+        "medical and health-related topics. Explain clearly and accurately. You are not a " +
+        "substitute for a doctor — for diagnosis, treatment, or anything urgent, tell the user " +
+        "to consult a healthcare professional.",
+    "Arts and Humanities" to "You are Irachat, developed by IRA Inc (Nigeria). You're assisting " +
+        "with literature, history, philosophy, and culture. Engage thoughtfully and encourage " +
+        "critical thinking. Keep answers concise unless asked for depth.",
+)
+private const val FALLBACK_INSTRUCTION =
+    "You are Irachat, an on-device AI assistant developed by IRA Inc, a Nigerian technology " +
+    "company. Keep answers concise and clear unless asked for more detail."
 
 class EngineHolder {
     private var engine: Engine? = null
@@ -65,7 +89,7 @@ class EngineHolder {
         ensureEngine()
     }
 
-    suspend fun getConversation(history: List<ChatTurn> = emptyList()): Conversation {
+    suspend fun getConversation(history: List<ChatTurn> = emptyList(), subject: String = "General"): Conversation {
         conversation?.let { return it }
 
         val readyEngine = ensureEngine()
@@ -74,8 +98,10 @@ class EngineHolder {
             val initialMessages = history.map {
                 if (it.role == "USER") Message.user(it.text) else Message.model(it.text)
             }
+            val instructionText = SUBJECT_INSTRUCTIONS[subject] ?: FALLBACK_INSTRUCTION
             val newConversation = readyEngine.createConversation(
                 ConversationConfig(
+                    systemInstruction = Contents.of(instructionText),
                     samplerConfig = SamplerConfig(topK = 64, topP = 0.95, temperature = 1.0),
                     initialMessages = initialMessages,
                 )
@@ -85,8 +111,6 @@ class EngineHolder {
         }
     }
 
-    // one-off, separate Conversation object — deliberately NOT stored in
-    // `conversation`, so it never touches the main chat's context/KV cache.
     suspend fun generateSummary(userText: String, aiText: String): String {
         val readyEngine = ensureEngine()
         return withContext(Dispatchers.IO) {

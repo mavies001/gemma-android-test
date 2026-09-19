@@ -84,8 +84,6 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         scope.launch { drawerState.close() }
     }
 
-    // tapping a subject always starts a NEW conversation tagged to it —
-    // each subject builds its own history rather than resuming one thread
     fun enterSubject(subject: String) {
         activeConversationId = null
         currentSubject = subject
@@ -119,6 +117,9 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         input = ""
         isGenerating = true
         waitingForFirstToken = true
+        // jump to bottom immediately on send, regardless of where the user
+        // had scrolled to — this is the one case that should always follow
+        scope.launch { listState.scrollToItem(0) }
 
         generationJob = scope.launch {
             repository.sendMessage(
@@ -135,13 +136,19 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                         messages.add(last.copy(text = cumulative, streaming = true))
                     }
                 },
-                onError = { err ->
-                    if (waitingForFirstToken) {
-                        messages.add(ChatMsg(Role.AI, "Error: $err", streaming = false))
-                        waitingForFirstToken = false
-                    } else {
-                        val last = messages.removeAt(messages.size - 1)
-                        messages.add(last.copy(text = "Error: $err", streaming = false))
+                onError = { originalText, conversationWasDeleted ->
+                    // roll back the UI to match the DB rollback — remove any
+                    // partial AI bubble, then the user's own bubble, and
+                    // restore what they typed so it isn't lost
+                    if (messages.isNotEmpty() && messages.last().streaming) {
+                        messages.removeAt(messages.size - 1)
+                    }
+                    if (messages.isNotEmpty() && messages.last().role == Role.USER && messages.last().text == originalText) {
+                        messages.removeAt(messages.size - 1)
+                    }
+                    input = originalText
+                    if (conversationWasDeleted) {
+                        activeConversationId = null
                     }
                 }
             )
@@ -155,8 +162,14 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
+    // only auto-follow new tokens if the user is already at the bottom
+    // (index 0, since reverseLayout is on) — if they've scrolled up to read
+    // earlier messages, new tokens won't yank them back down
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, waitingForFirstToken) {
-        if (messages.isNotEmpty() || waitingForFirstToken) listState.scrollToItem(0)
+        val isAtBottom = listState.firstVisibleItemIndex == 0
+        if ((messages.isNotEmpty() || waitingForFirstToken) && isAtBottom) {
+            listState.scrollToItem(0)
+        }
     }
 
     DisposableEffect(Unit) {

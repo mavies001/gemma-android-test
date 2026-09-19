@@ -61,6 +61,9 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
     suspend fun getMessagesForConversationOnce(conversationId: Long): List<MessageEntity>
+
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun deleteMessage(id: Long)
 }
 
 @Database(
@@ -83,8 +86,6 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "gemmatest.db"
                 )
-                    // no migration path built yet — wipes local history once on this
-                    // version bump (1 -> 2, adding the subject column) rather than crashing
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
