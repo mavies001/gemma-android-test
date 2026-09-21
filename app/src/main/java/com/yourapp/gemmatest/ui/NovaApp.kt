@@ -51,6 +51,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
     var input by rememberSaveable { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
     var waitingForFirstToken by remember { mutableStateOf(false) }
+    var showColdStartNotice by remember { mutableStateOf(false) }
     var activeConversationId by remember { mutableStateOf<Long?>(null) }
     var currentSubject by rememberSaveable { mutableStateOf(SUBJECTS.first()) }
     val conversations = remember { mutableStateListOf<ConversationEntity>() }
@@ -66,7 +67,19 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
+    fun stopGeneration() {
+        generationJob?.cancel()
+        generationJob = null
+        isGenerating = false
+        waitingForFirstToken = false
+        if (messages.isNotEmpty() && messages.last().streaming) {
+            val last = messages.removeAt(messages.size - 1)
+            messages.add(last.copy(streaming = false))
+        }
+    }
+
     fun loadConversation(id: Long) {
+        if (isGenerating) stopGeneration()
         scope.launch {
             activeConversationId = id
             repository.resetActiveConversation()
@@ -77,6 +90,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
     }
 
     fun newChat() {
+        if (isGenerating) stopGeneration()
         activeConversationId = null
         currentSubject = SUBJECTS.first()
         repository.resetActiveConversation()
@@ -85,6 +99,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
     }
 
     fun enterSubject(subject: String) {
+        if (isGenerating) stopGeneration()
         activeConversationId = null
         currentSubject = subject
         repository.resetActiveConversation()
@@ -99,33 +114,32 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    fun stopGeneration() {
-        generationJob?.cancel()
-        generationJob = null
-        isGenerating = false
-        waitingForFirstToken = false
-        if (messages.isNotEmpty() && messages.last().streaming) {
-            val last = messages.removeAt(messages.size - 1)
-            messages.add(last.copy(streaming = false))
-        }
-    }
-
     fun sendMessage() {
         val text = input.trim()
         if (text.isEmpty() || isGenerating) return
+        val engineWasReady = application.engineHolder.isReady
         messages.add(ChatMsg(Role.USER, text))
         input = ""
         isGenerating = true
         waitingForFirstToken = true
+        showColdStartNotice = !engineWasReady
         scope.launch { listState.scrollToItem(0) }
+
+        // pinned at send-time; used below to make sure streamed tokens only
+        // ever mutate the UI if the user hasn't switched to a different chat
+        var targetConversationId = activeConversationId
 
         generationJob = scope.launch {
             repository.sendMessage(
                 text = text,
                 subject = currentSubject,
                 activeConversationId = activeConversationId,
-                onConversationCreated = { id -> activeConversationId = id },
-                onToken = { cumulative ->
+                onConversationCreated = { id ->
+                    activeConversationId = id
+                    targetConversationId = id
+                },
+                onToken = onToken@{ cumulative ->
+                    if (activeConversationId != targetConversationId) return@onToken
                     if (waitingForFirstToken) {
                         messages.add(ChatMsg(Role.AI, cumulative, streaming = true))
                         waitingForFirstToken = false
@@ -134,7 +148,8 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                         messages.add(last.copy(text = cumulative, streaming = true))
                     }
                 },
-                onError = { originalText, conversationWasDeleted ->
+                onError = onError@{ originalText, conversationWasDeleted ->
+                    if (activeConversationId != targetConversationId) return@onError
                     if (messages.isNotEmpty() && messages.last().streaming) {
                         messages.removeAt(messages.size - 1)
                     }
@@ -157,9 +172,6 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    // truly "at bottom" needs BOTH index 0 AND near-zero scroll offset —
-    // index alone stays 0 even while scrolling within a single tall/growing
-    // item, which was incorrectly triggering a forced re-scroll on every token
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, waitingForFirstToken) {
         val isAtBottom = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 24
         if ((messages.isNotEmpty() || waitingForFirstToken) && isAtBottom) {
@@ -225,7 +237,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                             contentPadding = PaddingValues(18.dp, 26.dp, 18.dp, 10.dp),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
-                            if (waitingForFirstToken) item { TypingIndicator() }
+                            if (waitingForFirstToken) item { TypingIndicator(showColdStartHint = showColdStartNotice) }
                             itemsIndexed(messages.asReversed()) { _, m -> ChatMessageRow(m) }
                         }
                     }

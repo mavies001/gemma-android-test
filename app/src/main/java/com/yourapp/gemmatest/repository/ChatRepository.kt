@@ -10,6 +10,7 @@ import com.yourapp.gemmatest.engine.EngineHolder
 import com.yourapp.gemmatest.model.ChatMsg
 import com.yourapp.gemmatest.model.Role
 import com.yourapp.gemmatest.service.GenerationForegroundService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -73,17 +74,12 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
             MessageEntity(conversationId = convId, role = "USER", text = text, createdAt = System.currentTimeMillis())
         )
 
-        // build history BEFORE inserting the AI placeholder row below, so
-        // dropLast(1) correctly excludes only the just-inserted user message
         val priorTurns = squashConsecutiveRoles(
             db.messageDao().getMessagesForConversationOnce(convId)
                 .dropLast(1)
                 .map { ChatTurn(role = it.role, text = it.text) }
         )
 
-        // placeholder AI row, inserted immediately — from this point on, the
-        // user message always has a pair, even if the process is killed
-        // outright (OOM kill, OS background killer) before generation ends
         val aiMessageId = db.messageDao().insertMessage(
             MessageEntity(conversationId = convId, role = "AI", text = "", createdAt = System.currentTimeMillis())
         )
@@ -99,14 +95,18 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
             withContext(Dispatchers.IO) {
                 var chunkCount = 0
                 conversation.sendMessageAsync(text)
-                    .catch { errored = true }
+                    .catch { e ->
+                        // a user-initiated stop/switch cancels this coroutine —
+                        // that must NOT be treated as a generation error (which
+                        // would trigger the destructive rollback below and wipe
+                        // the user's message). Let cancellation propagate normally.
+                        if (e is CancellationException) throw e
+                        errored = true
+                    }
                     .collect { chunk ->
                         fullResponse += chunk.toString()
                         onToken(fullResponse)
                         chunkCount++
-                        // periodic flush to DB — doesn't need to happen on every
-                        // single token, just often enough that a kill mid-stream
-                        // only loses a small trailing amount, not everything
                         if (chunkCount % 5 == 0) {
                             db.messageDao().updateMessageText(aiMessageId, fullResponse)
                         }
@@ -118,9 +118,6 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
         }
 
         if (errored) {
-            // a genuinely CAUGHT error still gets a full clean rollback —
-            // this is different from a hard process kill, which the code
-            // above already guards against via the incremental writes
             db.messageDao().deleteMessage(aiMessageId)
             db.messageDao().deleteMessage(userMessageId)
             if (wasNewConversation) {
@@ -130,19 +127,25 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
             return
         }
 
-        // guaranteed final flush — covers any tokens after the last
-        // throttle checkpoint that the periodic write above might have missed
         db.messageDao().updateMessageText(aiMessageId, fullResponse)
 
-        val summaryText = try {
-            engineHolder.generateSummary(text, fullResponse)
-        } catch (e: Exception) {
-            fullResponse.take(60)
-        }
-        db.conversationDao().getConversation(convId)?.let { conv ->
-            db.conversationDao().updateConversation(
-                conv.copy(summary = summaryText, updatedAt = System.currentTimeMillis())
-            )
+        if (wasNewConversation) {
+            // generate the sidebar summary ONCE, from the user's first
+            // message only — never regenerated on later messages
+            val summaryText = try {
+                engineHolder.generateSummary(text)
+            } catch (e: Exception) {
+                text.take(60)
+            }
+            db.conversationDao().getConversation(convId)?.let { conv ->
+                db.conversationDao().updateConversation(
+                    conv.copy(summary = summaryText, updatedAt = System.currentTimeMillis())
+                )
+            }
+        } else {
+            // keep the sidebar's recency ordering correct without touching
+            // the (already-set) summary text
+            db.conversationDao().touchUpdatedAt(convId, System.currentTimeMillis())
         }
     }
 

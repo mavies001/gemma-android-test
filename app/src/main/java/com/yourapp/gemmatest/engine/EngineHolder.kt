@@ -49,6 +49,12 @@ class EngineHolder {
     private val engineInitMutex = Mutex()
     private var engineInitDeferred: CompletableDeferred<Engine>? = null
 
+    // simple, cheap read used by the UI to decide whether to show a
+    // "first response may take a while" hint — true once initialize() has
+    // actually completed
+    val isReady: Boolean
+        get() = engine != null
+
     private suspend fun ensureEngine(): Engine {
         engine?.let { return it }
 
@@ -111,7 +117,10 @@ class EngineHolder {
         }
     }
 
-    suspend fun generateSummary(userText: String, aiText: String): String {
+    // based ONLY on the user's own message — never the AI's response — so
+    // the sidebar title reflects what the user asked, not how the model
+    // answered
+    suspend fun generateSummary(userText: String): String {
         val readyEngine = ensureEngine()
         return withContext(Dispatchers.IO) {
             val summaryConversation = readyEngine.createConversation(
@@ -120,9 +129,9 @@ class EngineHolder {
                     initialMessages = emptyList(),
                 )
             )
-            val prompt = "In 4 to 6 words, write a short title summarizing this exchange. " +
-                "Respond with only the title, no punctuation, no quotes.\n\n" +
-                "User: $userText\nAssistant: $aiText"
+            val prompt = "Write a short 4 to 6 word title describing what this message is " +
+                "about. Respond with only the title, no punctuation, no quotes.\n\n" +
+                "Message: $userText"
             val response = summaryConversation.sendMessage(prompt)
             response.toString().trim().take(60)
         }

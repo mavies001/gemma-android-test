@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -21,12 +22,13 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
@@ -37,37 +39,15 @@ import com.yourapp.gemmatest.markdown.MarkdownText
 import com.yourapp.gemmatest.model.ChatMsg
 import com.yourapp.gemmatest.model.Role
 import com.yourapp.gemmatest.theme.LocalNovaColors
-
-// shimmer sweep modifier — animates a lighter gradient band across whatever
-// it's applied to, on an infinite loop, used for skeleton placeholders
-@Composable
-private fun Modifier.shimmerEffect(baseColor: Color, highlightColor: Color): Modifier {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val translateAnim by transition.animateFloat(
-        initialValue = -400f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "shimmerTranslate",
-    )
-    return this.background(
-        Brush.linearGradient(
-            colors = listOf(baseColor, highlightColor, baseColor),
-            start = Offset(translateAnim, 0f),
-            end = Offset(translateAnim + 300f, 300f),
-        )
-    )
-}
+import kotlinx.coroutines.delay
 
 @Composable
 fun AnimatedDots() {
     val colors = LocalNovaColors.current
-    var dotCount by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(1) }
+    var dotCount by remember { mutableStateOf(1) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         while (true) {
-            kotlinx.coroutines.delay(400)
+            delay(400)
             dotCount = (dotCount % 3) + 1
         }
     }
@@ -99,38 +79,44 @@ fun ChatMessageRow(msg: ChatMsg) {
     }
 }
 
-// skeleton placeholder shown while waiting for the first token — three
-// shimmering lines shaped roughly like an incoming paragraph, no text at all
+// "Typing" label + up to 20 dots filling in across two rows, then resetting
+// and looping — replaces the previous shimmer-skeleton indicator
 @Composable
-fun TypingIndicator() {
+fun TypingIndicator(showColdStartHint: Boolean = false) {
     val colors = LocalNovaColors.current
-    val base = colors.Line
-    val highlight = colors.Text2.copy(alpha = 0.35f)
-    Column(
-        modifier = Modifier.padding(vertical = 4.dp).widthIn(max = 320.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.75f)
-                .height(14.dp)
-                .clip(RoundedCornerShape(7.dp))
-                .shimmerEffect(base, highlight)
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.55f)
-                .height(14.dp)
-                .clip(RoundedCornerShape(7.dp))
-                .shimmerEffect(base, highlight)
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.35f)
-                .height(14.dp)
-                .clip(RoundedCornerShape(7.dp))
-                .shimmerEffect(base, highlight)
-        )
+    var visibleCount by remember { mutableStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            delay(90)
+            visibleCount = (visibleCount + 1) % 21
+        }
+    }
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text("Typing", color = colors.Text2, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+        Spacer(Modifier.height(6.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (row in 0 until 2) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (col in 0 until 10) {
+                        val dotIndex = row * 10 + col
+                        val visible = dotIndex < visibleCount
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (visible) colors.Blue500 else colors.Line)
+                        )
+                    }
+                }
+            }
+        }
+        if (showColdStartHint) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "First response may take a while while the on-device model loads.",
+                color = colors.Text2, fontSize = 11.sp, lineHeight = 15.sp
+            )
+        }
     }
 }
 
@@ -153,7 +139,7 @@ fun InputArea(
             TextField(
                 value = input, onValueChange = onInputChange, modifier = Modifier.weight(1f),
                 enabled = !isGenerating,
-                placeholder = { Text("Message Nova...", color = colors.Text2, fontSize = 14.5.sp) },
+                placeholder = { Text("Message Ira...", color = colors.Text2, fontSize = 14.5.sp) },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                     disabledContainerColor = Color.Transparent,
@@ -164,7 +150,6 @@ fun InputArea(
             )
             val canSend = input.isNotBlank() && !isGenerating
 
-            // pulse animation on the send/stop button while generating
             val pulseTransition = rememberInfiniteTransition(label = "sendPulse")
             val pulseScale by pulseTransition.animateFloat(
                 initialValue = 1f,
