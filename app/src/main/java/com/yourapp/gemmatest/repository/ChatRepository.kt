@@ -7,6 +7,7 @@ import com.yourapp.gemmatest.data.ConversationEntity
 import com.yourapp.gemmatest.data.MessageEntity
 import com.yourapp.gemmatest.engine.ChatTurn
 import com.yourapp.gemmatest.engine.EngineHolder
+import com.yourapp.gemmatest.engine.OnlineChatClient
 import com.yourapp.gemmatest.model.ChatMsg
 import com.yourapp.gemmatest.model.Role
 import com.yourapp.gemmatest.service.GenerationForegroundService
@@ -14,9 +15,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 
-class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
+class ChatRepository(
+    context: Context,
+    private val engineHolder: EngineHolder,
+    private val onlineChatClient: OnlineChatClient,
+) {
     private val appContext = context.applicationContext
     private val db = AppDatabase.getInstance(appContext)
     private val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -37,11 +43,23 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
         db.conversationDao().deleteConversation(id)
     }
 
-    private suspend fun ensureConversationRow(activeId: Long?, firstUserText: String, subject: String): Long {
+    private suspend fun ensureConversationRow(
+        activeId: Long?,
+        firstUserText: String,
+        subject: String,
+        isOnline: Boolean,
+    ): Long {
         if (activeId != null) return activeId
         val now = System.currentTimeMillis()
         return db.conversationDao().insertConversation(
-            ConversationEntity(title = firstUserText.take(40), summary = "", subject = subject, createdAt = now, updatedAt = now)
+            ConversationEntity(
+                title = firstUserText.take(40),
+                summary = "",
+                subject = subject,
+                isOnline = isOnline,
+                createdAt = now,
+                updatedAt = now,
+            )
         )
     }
 
@@ -61,13 +79,14 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
     suspend fun sendMessage(
         text: String,
         subject: String,
+        isOnline: Boolean,
         activeConversationId: Long?,
         onConversationCreated: (Long) -> Unit,
         onToken: (String) -> Unit,
-        onError: (originalText: String, conversationWasDeleted: Boolean) -> Unit,
+        onError: (originalText: String, conversationWasDeleted: Boolean, wasOnline: Boolean) -> Unit,
     ) {
         val wasNewConversation = activeConversationId == null
-        val convId = ensureConversationRow(activeConversationId, text, subject)
+        val convId = ensureConversationRow(activeConversationId, text, subject, isOnline)
         if (wasNewConversation) onConversationCreated(convId)
 
         val userMessageId = db.messageDao().insertMessage(
@@ -91,20 +110,30 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
         var fullResponse = ""
         var errored = false
         try {
-            val conversation = engineHolder.getConversation(history = priorTurns, subject = subject)
+            val deltaFlow: Flow<String> = if (isOnline) {
+                flow {
+                    onlineChatClient.registerDeviceIfNeeded()
+                    onlineChatClient.sendMessage(history = priorTurns, userText = text).collect { emit(it) }
+                }
+            } else {
+                val conversation = engineHolder.getConversation(history = priorTurns, subject = subject)
+                flow {
+                    conversation.sendMessageAsync(text).collect { chunk -> emit(chunk.toString()) }
+                }
+            }
+
             withContext(Dispatchers.IO) {
                 var chunkCount = 0
-                conversation.sendMessageAsync(text)
+                deltaFlow
                     .catch { e ->
                         // a user-initiated stop/switch cancels this coroutine —
                         // that must NOT be treated as a generation error (which
-                        // would trigger the destructive rollback below and wipe
-                        // the user's message). Let cancellation propagate normally.
+                        // would trigger the destructive rollback below)
                         if (e is CancellationException) throw e
                         errored = true
                     }
                     .collect { chunk ->
-                        fullResponse += chunk.toString()
+                        fullResponse += chunk
                         onToken(fullResponse)
                         chunkCount++
                         if (chunkCount % 5 == 0) {
@@ -123,15 +152,15 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
             if (wasNewConversation) {
                 db.conversationDao().deleteConversation(convId)
             }
-            onError(text, wasNewConversation)
+            onError(text, wasNewConversation, isOnline)
             return
         }
 
         db.messageDao().updateMessageText(aiMessageId, fullResponse)
 
         if (wasNewConversation) {
-            // generate the sidebar summary ONCE, from the user's first
-            // message only — never regenerated on later messages
+            // summaries always use the local model — free, already warm,
+            // doesn't spend GLM tokens even for online conversations
             val summaryText = try {
                 engineHolder.generateSummary(text)
             } catch (e: Exception) {
@@ -143,8 +172,6 @@ class ChatRepository(context: Context, private val engineHolder: EngineHolder) {
                 )
             }
         } else {
-            // keep the sidebar's recency ordering correct without touching
-            // the (already-set) summary text
             db.conversationDao().touchUpdatedAt(convId, System.currentTimeMillis())
         }
     }

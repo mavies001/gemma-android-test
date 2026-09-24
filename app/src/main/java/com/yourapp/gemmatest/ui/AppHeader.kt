@@ -105,6 +105,8 @@ fun AppHeader(
     onToggleTheme: () -> Unit,
     isDark: Boolean,
     isGenerating: Boolean,
+    isOnline: Boolean,
+    onToggleOnline: () -> Unit,
 ) {
     val colors = LocalNovaColors.current
     Column {
@@ -127,7 +129,28 @@ fun AppHeader(
                 )
                 Text("Irachat", color = colors.Text0, fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // online/offline toggle — a labeled pill, distinct shape from
+                // the square icon buttons so it reads as a mode switch, not
+                // another action button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(19.dp))
+                        .background(if (isOnline) Brush.linearGradient(listOf(colors.Blue500, colors.Cyan)) else Brush.linearGradient(listOf(colors.Surface, colors.Surface)))
+                        .border(1.dp, if (isOnline) Color.Transparent else colors.Line, RoundedCornerShape(19.dp))
+                        .clickable(onClick = onToggleOnline)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(if (isOnline) "\u2601" else "\u2708", fontSize = 13.sp)
+                    Text(
+                        if (isOnline) "Online" else "Local",
+                        color = if (isOnline) Color.White else colors.Text1,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .size(38.dp)

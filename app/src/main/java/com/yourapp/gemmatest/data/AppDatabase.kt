@@ -1,6 +1,7 @@
 package com.yourapp.gemmatest.data
 
 import androidx.room.*
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "conversations")
@@ -9,6 +10,7 @@ data class ConversationEntity(
     val title: String,
     val summary: String,
     val subject: String = "General",
+    val isOnline: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long,
 )
@@ -72,9 +74,18 @@ interface MessageDao {
     suspend fun updateMessageText(id: Long, text: String)
 }
 
+// v2 -> v3: added ConversationEntity.isOnline. Existing rows default to 0
+// (offline) — correct, since only offline conversations could exist before
+// this migration. No data loss for any current install.
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE conversations ADD COLUMN isOnline INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -92,7 +103,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "gemmatest.db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_2_3)
+                    .fallbackToDestructiveMigration() // safety net only; MIGRATION_2_3 is the real path
                     .build()
                 INSTANCE = instance
                 instance

@@ -97,6 +97,16 @@ fun Sidebar(
                             ) {
                                 Text(c.subject, color = colors.Text2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
                             }
+                            if (c.isOnline) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(colors.Surface2)
+                                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Online", color = colors.Cyan, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
                         }
                         Spacer(Modifier.height(3.dp))
                         val primaryText = c.summary.ifEmpty { c.title }

@@ -6,10 +6,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,7 +48,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
     val colors = LocalNovaColors.current
     val context = LocalContext.current
     val application = context.applicationContext as NovaApplication
-    val repository = remember { ChatRepository(context, application.engineHolder) }
+    val repository = remember { ChatRepository(context, application.engineHolder, application.onlineChatClient) }
     val messages = remember { mutableStateListOf<ChatMsg>() }
     var input by rememberSaveable { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
@@ -54,6 +56,8 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
     var showColdStartNotice by remember { mutableStateOf(false) }
     var activeConversationId by remember { mutableStateOf<Long?>(null) }
     var currentSubject by rememberSaveable { mutableStateOf(SUBJECTS.first()) }
+    var isOnlineMode by rememberSaveable { mutableStateOf(false) }
+    var pendingFallbackText by remember { mutableStateOf<String?>(null) }
     val conversations = remember { mutableStateListOf<ConversationEntity>() }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -118,21 +122,21 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         val text = input.trim()
         if (text.isEmpty() || isGenerating) return
         val engineWasReady = application.engineHolder.isReady
+        val sendingOnline = isOnlineMode
         messages.add(ChatMsg(Role.USER, text))
         input = ""
         isGenerating = true
         waitingForFirstToken = true
-        showColdStartNotice = !engineWasReady
+        showColdStartNotice = !sendingOnline && !engineWasReady
         scope.launch { listState.scrollToItem(0) }
 
-        // pinned at send-time; used below to make sure streamed tokens only
-        // ever mutate the UI if the user hasn't switched to a different chat
         var targetConversationId = activeConversationId
 
         generationJob = scope.launch {
             repository.sendMessage(
                 text = text,
                 subject = currentSubject,
+                isOnline = sendingOnline,
                 activeConversationId = activeConversationId,
                 onConversationCreated = { id ->
                     activeConversationId = id
@@ -148,7 +152,7 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                         messages.add(last.copy(text = cumulative, streaming = true))
                     }
                 },
-                onError = onError@{ originalText, conversationWasDeleted ->
+                onError = onError@{ originalText, conversationWasDeleted, wasOnline ->
                     if (activeConversationId != targetConversationId) return@onError
                     if (messages.isNotEmpty() && messages.last().streaming) {
                         messages.removeAt(messages.size - 1)
@@ -159,6 +163,9 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                     input = originalText
                     if (conversationWasDeleted) {
                         activeConversationId = null
+                    }
+                    if (wasOnline) {
+                        pendingFallbackText = originalText
                     }
                 }
             )
@@ -181,6 +188,30 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
 
     DisposableEffect(Unit) {
         onDispose { repository.close() }
+    }
+
+    // shown after an online-mode failure — user chooses to retry online or
+    // fall back to the local model for this message
+    pendingFallbackText?.let { failedText ->
+        AlertDialog(
+            onDismissRequest = { pendingFallbackText = null },
+            title = { Text("Couldn't reach Irachat online") },
+            text = { Text("Your message is back in the input box. Would you like to try again online, or switch to the local model?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    isOnlineMode = false
+                    pendingFallbackText = null
+                    input = failedText
+                    sendMessage()
+                }) { Text("Use local model") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingFallbackText = null
+                    input = failedText
+                }) { Text("Not now") }
+            }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
@@ -206,6 +237,8 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                     onToggleTheme = onToggleTheme,
                     isDark = isDark,
                     isGenerating = isGenerating,
+                    isOnline = isOnlineMode,
+                    onToggleOnline = { if (!isGenerating) isOnlineMode = !isOnlineMode },
                 )
 
                 SubjectDropdown(subjects = SUBJECTS, selected = currentSubject, onSelect = { enterSubject(it) })
