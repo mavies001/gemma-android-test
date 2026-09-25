@@ -98,6 +98,28 @@ fun HeaderIconButton(icon: ImageVector, contentDescription: String, tint: Color?
     }
 }
 
+// item 1: minimal icon-only toggle, same 38dp footprint as the other
+// header buttons — tint changes rather than a whole separate pill/label
+@Composable
+fun OnlineToggleButton(isOnline: Boolean, onClick: () -> Unit) {
+    val colors = LocalNovaColors.current
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.Surface)
+            .border(1.dp, if (isOnline) colors.Blue500 else colors.Line, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            if (isOnline) "\u2601" else "\u2708",
+            fontSize = 15.sp,
+            color = if (isOnline) colors.Blue500 else colors.Text1
+        )
+    }
+}
+
 @Composable
 fun AppHeader(
     onToggleSidebar: () -> Unit,
@@ -129,28 +151,8 @@ fun AppHeader(
                 )
                 Text("Irachat", color = colors.Text0, fontSize = 19.sp, fontWeight = FontWeight.Bold)
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // online/offline toggle — a labeled pill, distinct shape from
-                // the square icon buttons so it reads as a mode switch, not
-                // another action button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(19.dp))
-                        .background(if (isOnline) Brush.linearGradient(listOf(colors.Blue500, colors.Cyan)) else Brush.linearGradient(listOf(colors.Surface, colors.Surface)))
-                        .border(1.dp, if (isOnline) Color.Transparent else colors.Line, RoundedCornerShape(19.dp))
-                        .clickable(onClick = onToggleOnline)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text(if (isOnline) "\u2601" else "\u2708", fontSize = 13.sp)
-                    Text(
-                        if (isOnline) "Online" else "Local",
-                        color = if (isOnline) Color.White else colors.Text1,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OnlineToggleButton(isOnline = isOnline, onClick = onToggleOnline)
                 Box(
                     modifier = Modifier
                         .size(38.dp)

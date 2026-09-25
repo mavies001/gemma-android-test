@@ -63,19 +63,6 @@ class ChatRepository(
         )
     }
 
-    private fun squashConsecutiveRoles(turns: List<ChatTurn>): List<ChatTurn> {
-        val result = mutableListOf<ChatTurn>()
-        for (turn in turns) {
-            val last = result.lastOrNull()
-            if (last != null && last.role == turn.role) {
-                result[result.lastIndex] = last.copy(text = last.text + "\n\n" + turn.text)
-            } else {
-                result.add(turn)
-            }
-        }
-        return result
-    }
-
     suspend fun sendMessage(
         text: String,
         subject: String,
@@ -93,11 +80,13 @@ class ChatRepository(
             MessageEntity(conversationId = convId, role = "USER", text = text, createdAt = System.currentTimeMillis())
         )
 
-        val priorTurns = squashConsecutiveRoles(
-            db.messageDao().getMessagesForConversationOnce(convId)
-                .dropLast(1)
-                .map { ChatTurn(role = it.role, text = it.text) }
-        )
+        // all messages before the one just inserted
+        val priorMessages = db.messageDao().getMessagesForConversationOnce(convId).dropLast(1)
+        // item 3: only the single most recent USER-authored message is
+        // used as context for a new send, regardless of mode — no AI
+        // reply, no earlier turns, applied uniformly (not just after an
+        // online detour)
+        val lastUserOnly = priorMessages.lastOrNull { it.role == "USER" }?.text
 
         val aiMessageId = db.messageDao().insertMessage(
             MessageEntity(conversationId = convId, role = "AI", text = "", createdAt = System.currentTimeMillis())
@@ -111,14 +100,19 @@ class ChatRepository(
         var errored = false
         try {
             val deltaFlow: Flow<String> = if (isOnline) {
-                flow {
-                    onlineChatClient.registerDeviceIfNeeded()
-                    onlineChatClient.sendMessage(history = priorTurns, userText = text).collect { emit(it) }
-                }
+                onlineChatClient.registerDeviceIfNeeded()
+                onlineChatClient.sendMessage(lastUserContext = lastUserOnly, userText = text)
             } else {
-                val conversation = engineHolder.getConversation(history = priorTurns, subject = subject)
+                // always reset: history is trimmed to one message anyway,
+                // so there's no benefit to keeping a cached Conversation
+                // around between sends, and this avoids the stale-cache
+                // bug where a chat that went online and came back offline
+                // would replay against out-of-date engine state
+                engineHolder.resetConversation()
+                val effectiveText = if (lastUserOnly != null) "$lastUserOnly\n\n$text" else text
+                val conversation = engineHolder.getConversation(history = emptyList(), subject = subject)
                 flow {
-                    conversation.sendMessageAsync(text).collect { chunk -> emit(chunk.toString()) }
+                    conversation.sendMessageAsync(effectiveText).collect { chunk -> emit(chunk.toString()) }
                 }
             }
 
@@ -126,9 +120,6 @@ class ChatRepository(
                 var chunkCount = 0
                 deltaFlow
                     .catch { e ->
-                        // a user-initiated stop/switch cancels this coroutine —
-                        // that must NOT be treated as a generation error (which
-                        // would trigger the destructive rollback below)
                         if (e is CancellationException) throw e
                         errored = true
                     }
@@ -159,10 +150,9 @@ class ChatRepository(
         db.messageDao().updateMessageText(aiMessageId, fullResponse)
 
         if (wasNewConversation) {
-            // summaries always use the local model — free, already warm,
-            // doesn't spend GLM tokens even for online conversations
+            // item 4: summary generator matches how the conversation started
             val summaryText = try {
-                engineHolder.generateSummary(text)
+                if (isOnline) onlineChatClient.generateSummary(text) else engineHolder.generateSummary(text)
             } catch (e: Exception) {
                 text.take(60)
             }
