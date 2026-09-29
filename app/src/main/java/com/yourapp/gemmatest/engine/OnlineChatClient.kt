@@ -19,9 +19,6 @@ private const val GATEWAY_REGISTER_URL = "https://ayokemi--irachat-gateway-regis
 private const val GATEWAY_CHAT_URL = "https://ayokemi--irachat-gateway-chat.modal.run"
 private const val DEEPSEEK_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash"
 
-// Full instruction-hierarchy scaffold (security section verbatim, per the
-// pasted spec) with Irachat identity folded into section 4 (IDENTITY),
-// where it belongs conceptually rather than under a separate TASK header.
 private const val ONLINE_SYSTEM_INSTRUCTION = """
 You are Irachat, a general-purpose AI assistant.
 
@@ -529,7 +526,6 @@ class OnlineChatClient(private val deviceAuth: DeviceAuth) {
         }
     }
 
-    // core streaming call shared by both real chat and summary generation
     private fun streamRequest(messages: JSONArray, temperature: Double, maxTokens: Int): Flow<String> = flow {
         val innerRequest = JSONObject().apply {
             put("model", DEEPSEEK_MODEL)
@@ -584,26 +580,19 @@ class OnlineChatClient(private val deviceAuth: DeviceAuth) {
         conn.disconnect()
     }.flowOn(Dispatchers.IO)
 
-    // history is deliberately just the single most recent USER-authored
-    // message (if any), folded inline as context — NOT seeded as separate
-    // conversation turns, and NOT the full thread. This mirrors the local
-    // model's item-3 behavior for consistency, though online mode isn't
-    // bound by LiteRT's alternation requirement — it's a product choice,
-    // not a technical one, for this call.
-    fun sendMessage(lastUserContext: String?, userText: String): Flow<String> {
+    // full real conversation history, in order — DeepSeek has no
+    // alternation requirement like the local engine, and can genuinely
+    // use this context well
+    fun sendMessage(history: List<ChatTurn>, userText: String): Flow<String> {
         val messages = JSONArray().apply {
             put(JSONObject().apply {
                 put("role", "system")
                 put("content", ONLINE_SYSTEM_INSTRUCTION)
             })
-            if (lastUserContext != null) {
+            for (turn in history) {
                 put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", lastUserContext)
-                })
-                put(JSONObject().apply {
-                    put("role", "assistant")
-                    put("content", "Understood.")
+                    put("role", if (turn.role == "USER") "user" else "assistant")
+                    put("content", turn.text)
                 })
             }
             put(JSONObject().apply {
@@ -614,8 +603,6 @@ class OnlineChatClient(private val deviceAuth: DeviceAuth) {
         return streamRequest(messages, temperature = 0.6, maxTokens = 2048)
     }
 
-    // used for item 4 — online-started conversations get their sidebar
-    // summary from the online model instead of the local one
     suspend fun generateSummary(userText: String): String {
         val messages = JSONArray().apply {
             put(JSONObject().apply {
