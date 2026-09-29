@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,54 +49,91 @@ import kotlinx.coroutines.delay
 fun AnimatedDots() {
     val colors = LocalNovaColors.current
     var dotCount by remember { mutableStateOf(1) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+    LaunchedEffect(Unit) {
         while (true) {
             delay(400)
             dotCount = (dotCount % 3) + 1
         }
     }
-    Text(".".repeat(dotCount), color = colors.Text2, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+    Text(".".repeat(dotCount), color = colors.Text2, fontSize = 18.sp, fontWeight = FontWeight.Bold)
 }
 
 @Composable
-fun ChatMessageRow(msg: ChatMsg) {
+fun ChatMessageRow(msg: ChatMsg, onResend: (String) -> Unit) {
     val colors = LocalNovaColors.current
+    val clipboard = LocalClipboardManager.current
     val isUser = msg.role == Role.USER
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
-        if (!isUser) {
-            SelectionContainer(modifier = Modifier.weight(1f, fill = false).widthIn(max = 620.dp)) {
-                MarkdownText(raw = msg.text, textColor = colors.Text0, streaming = msg.streaming)
+    var justCopied by remember { mutableStateOf(false) }
+
+    LaunchedEffect(justCopied) {
+        if (justCopied) {
+            delay(1200)
+            justCopied = false
+        }
+    }
+
+    Column(
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
+            if (!isUser) {
+                SelectionContainer(modifier = Modifier.weight(1f, fill = false).widthIn(max = 620.dp)) {
+                    MarkdownText(raw = msg.text, textColor = colors.Text0, streaming = msg.streaming)
+                }
+            } else {
+                SelectionContainer {
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = 280.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(listOf(colors.Blue500, Color(0xFF4F7DFA))))
+                            .padding(horizontal = 15.dp, vertical = 12.dp)
+                    ) {
+                        Text(msg.text, color = Color.White, fontSize = 14.5.sp, lineHeight = 22.sp)
+                    }
+                }
             }
-        } else {
-            SelectionContainer {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 280.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Brush.linearGradient(listOf(colors.Blue500, Color(0xFF4F7DFA))))
-                        .padding(horizontal = 15.dp, vertical = 12.dp)
-                ) {
-                    Text(msg.text, color = Color.White, fontSize = 14.5.sp, lineHeight = 22.sp)
+        }
+        // hidden while streaming — copying/resending an incomplete message
+        // doesn't make sense yet
+        if (!msg.streaming) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                Text(
+                    if (justCopied) "Copied" else "Copy",
+                    color = colors.Text2, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.clickable {
+                        clipboard.setText(AnnotatedString(msg.text))
+                        justCopied = true
+                    }
+                )
+                if (isUser) {
+                    Text(
+                        "Resend",
+                        color = colors.Text2, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable { onResend(msg.text) }
+                    )
                 }
             }
         }
     }
 }
 
-// "Typing" label + up to 20 dots filling in across two rows, then resetting
-// and looping — replaces the previous shimmer-skeleton indicator
 @Composable
 fun TypingIndicator(showColdStartHint: Boolean = false) {
     val colors = LocalNovaColors.current
     var visibleCount by remember { mutableStateOf(0) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
+    LaunchedEffect(Unit) {
         while (true) {
             delay(90)
             visibleCount = (visibleCount + 1) % 21
         }
     }
     Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        Text("Typing", color = colors.Text2, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+        Text("Typing", color = colors.Text2, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (row in 0 until 2) {

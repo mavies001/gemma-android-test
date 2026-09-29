@@ -38,6 +38,7 @@ import com.yourapp.gemmatest.model.ChatMsg
 import com.yourapp.gemmatest.model.Role
 import com.yourapp.gemmatest.repository.ChatRepository
 import com.yourapp.gemmatest.theme.LocalNovaColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -133,42 +134,51 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         var targetConversationId = activeConversationId
 
         generationJob = scope.launch {
-            repository.sendMessage(
-                text = text,
-                subject = currentSubject,
-                isOnline = sendingOnline,
-                activeConversationId = activeConversationId,
-                onConversationCreated = { id ->
-                    activeConversationId = id
-                    targetConversationId = id
-                },
-                onToken = onToken@{ cumulative ->
-                    if (activeConversationId != targetConversationId) return@onToken
-                    if (waitingForFirstToken) {
-                        messages.add(ChatMsg(Role.AI, cumulative, streaming = true))
-                        waitingForFirstToken = false
-                    } else {
-                        val last = messages.removeAt(messages.size - 1)
-                        messages.add(last.copy(text = cumulative, streaming = true))
+            // safety net: repository's own flow handles the real error
+            // paths via onError; this only absorbs anything genuinely
+            // unexpected that slips past that, so it can't crash the app
+            try {
+                repository.sendMessage(
+                    text = text,
+                    subject = currentSubject,
+                    isOnline = sendingOnline,
+                    activeConversationId = activeConversationId,
+                    onConversationCreated = { id ->
+                        activeConversationId = id
+                        targetConversationId = id
+                    },
+                    onToken = onToken@{ cumulative ->
+                        if (activeConversationId != targetConversationId) return@onToken
+                        if (waitingForFirstToken) {
+                            messages.add(ChatMsg(Role.AI, cumulative, streaming = true))
+                            waitingForFirstToken = false
+                        } else {
+                            val last = messages.removeAt(messages.size - 1)
+                            messages.add(last.copy(text = cumulative, streaming = true))
+                        }
+                    },
+                    onError = onError@{ originalText, conversationWasDeleted, wasOnline ->
+                        if (activeConversationId != targetConversationId) return@onError
+                        if (messages.isNotEmpty() && messages.last().streaming) {
+                            messages.removeAt(messages.size - 1)
+                        }
+                        if (messages.isNotEmpty() && messages.last().role == Role.USER && messages.last().text == originalText) {
+                            messages.removeAt(messages.size - 1)
+                        }
+                        input = originalText
+                        if (conversationWasDeleted) {
+                            activeConversationId = null
+                        }
+                        if (wasOnline) {
+                            pendingFallbackText = originalText
+                        }
                     }
-                },
-                onError = onError@{ originalText, conversationWasDeleted, wasOnline ->
-                    if (activeConversationId != targetConversationId) return@onError
-                    if (messages.isNotEmpty() && messages.last().streaming) {
-                        messages.removeAt(messages.size - 1)
-                    }
-                    if (messages.isNotEmpty() && messages.last().role == Role.USER && messages.last().text == originalText) {
-                        messages.removeAt(messages.size - 1)
-                    }
-                    input = originalText
-                    if (conversationWasDeleted) {
-                        activeConversationId = null
-                    }
-                    if (wasOnline) {
-                        pendingFallbackText = originalText
-                    }
-                }
-            )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // absorbed — see comment above
+            }
             if (messages.isNotEmpty() && messages.last().streaming) {
                 val last = messages.removeAt(messages.size - 1)
                 messages.add(last.copy(streaming = false))
@@ -177,6 +187,12 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
             waitingForFirstToken = false
             generationJob = null
         }
+    }
+
+    fun resendMessage(text: String) {
+        if (isGenerating) return
+        input = text
+        sendMessage()
     }
 
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length, waitingForFirstToken) {
@@ -190,8 +206,6 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
         onDispose { repository.close() }
     }
 
-    // shown after an online-mode failure — user chooses to retry online or
-    // fall back to the local model for this message
     pendingFallbackText?.let { failedText ->
         AlertDialog(
             onDismissRequest = { pendingFallbackText = null },
@@ -271,7 +285,9 @@ fun NovaApp(isDark: Boolean, onToggleTheme: () -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
                             if (waitingForFirstToken) item { TypingIndicator(showColdStartHint = showColdStartNotice) }
-                            itemsIndexed(messages.asReversed()) { _, m -> ChatMessageRow(m) }
+                            itemsIndexed(messages.asReversed()) { _, m ->
+                                ChatMessageRow(m, onResend = { resendMessage(it) })
+                            }
                         }
                     }
                 }

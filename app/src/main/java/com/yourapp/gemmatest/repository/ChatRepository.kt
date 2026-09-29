@@ -80,13 +80,9 @@ class ChatRepository(
             MessageEntity(conversationId = convId, role = "USER", text = text, createdAt = System.currentTimeMillis())
         )
 
-        // all messages before the one just inserted
         val priorMessages = db.messageDao().getMessagesForConversationOnce(convId).dropLast(1)
-        // item 3: only the single most recent USER-authored message is
-        // used as context for a new send, regardless of mode — no AI
-        // reply, no earlier turns, applied uniformly (not just after an
-        // online detour)
         val lastUserOnly = priorMessages.lastOrNull { it.role == "USER" }?.text
+        val fullHistory = priorMessages.map { ChatTurn(role = it.role, text = it.text) }
 
         val aiMessageId = db.messageDao().insertMessage(
             MessageEntity(conversationId = convId, role = "AI", text = "", createdAt = System.currentTimeMillis())
@@ -99,19 +95,22 @@ class ChatRepository(
         var fullResponse = ""
         var errored = false
         try {
+            // CRASH FIX: registerDeviceIfNeeded()/resetConversation()/
+            // getConversation() now run INSIDE the flow{} builder rather
+            // than before it, so the .catch{} below actually covers them.
+            // Previously these ran as plain suspend calls before the flow
+            // was even built, so any exception there had no .catch to land
+            // in and crashed the whole app instead of being handled.
             val deltaFlow: Flow<String> = if (isOnline) {
-                onlineChatClient.registerDeviceIfNeeded()
-                onlineChatClient.sendMessage(lastUserContext = lastUserOnly, userText = text)
-            } else {
-                // always reset: history is trimmed to one message anyway,
-                // so there's no benefit to keeping a cached Conversation
-                // around between sends, and this avoids the stale-cache
-                // bug where a chat that went online and came back offline
-                // would replay against out-of-date engine state
-                engineHolder.resetConversation()
-                val effectiveText = if (lastUserOnly != null) "$lastUserOnly\n\n$text" else text
-                val conversation = engineHolder.getConversation(history = emptyList(), subject = subject)
                 flow {
+                    onlineChatClient.registerDeviceIfNeeded()
+                    onlineChatClient.sendMessage(history = fullHistory, userText = text).collect { chunk -> emit(chunk) }
+                }
+            } else {
+                flow {
+                    engineHolder.resetConversation()
+                    val effectiveText = if (lastUserOnly != null) "$lastUserOnly\n\n$text" else text
+                    val conversation = engineHolder.getConversation(history = emptyList(), subject = subject)
                     conversation.sendMessageAsync(effectiveText).collect { chunk -> emit(chunk.toString()) }
                 }
             }
@@ -150,7 +149,6 @@ class ChatRepository(
         db.messageDao().updateMessageText(aiMessageId, fullResponse)
 
         if (wasNewConversation) {
-            // item 4: summary generator matches how the conversation started
             val summaryText = try {
                 if (isOnline) onlineChatClient.generateSummary(text) else engineHolder.generateSummary(text)
             } catch (e: Exception) {

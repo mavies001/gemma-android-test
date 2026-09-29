@@ -14,6 +14,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,11 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yourapp.gemmatest.data.ConversationEntity
 import com.yourapp.gemmatest.theme.LocalNovaColors
+import kotlinx.coroutines.delay
 
 @Composable
 fun SubjectDropdown(subjects: List<String>, selected: String, onSelect: (String) -> Unit) {
@@ -56,6 +59,76 @@ fun SubjectDropdown(subjects: List<String>, selected: String, onSelect: (String)
                         onSelect(s)
                     }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackupRestoreFooter() {
+    val colors = LocalNovaColors.current
+    var banner by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(banner) {
+        if (banner != null) {
+            delay(7000)
+            banner = null
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.Line))
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(
+                "BACKUP & RESTORE", color = colors.Text2, fontSize = 10.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colors.Surface)
+                        .border(1.dp, colors.Line, RoundedCornerShape(10.dp))
+                        .clickable {
+                            banner = "Backup is temporarily unavailable and will return in an " +
+                                "update. No backup was created, so your chats are only stored " +
+                                "on this device."
+                        }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("\u2191  Back up", color = colors.Text0, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colors.Surface)
+                        .border(1.dp, colors.Line, RoundedCornerShape(10.dp))
+                        .clickable {
+                            banner = "Restore is temporarily unavailable and will return in an " +
+                                "update. Nothing was restored."
+                        }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("\u2193  Restore", color = colors.Text0, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+            banner?.let { message ->
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colors.Surface2)
+                        .clickable { banner = null }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Text(message, color = colors.Text1, fontSize = 11.5.sp, lineHeight = 16.sp, textAlign = TextAlign.Start)
+                }
             }
         }
     }
@@ -119,5 +192,6 @@ fun Sidebar(
                 }
             }
         }
+        BackupRestoreFooter()
     }
 }

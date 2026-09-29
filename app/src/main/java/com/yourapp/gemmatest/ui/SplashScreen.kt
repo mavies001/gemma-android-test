@@ -22,31 +22,25 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.yourapp.gemmatest.R
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 
-/**
- * Full-screen splash shown right after the system SplashScreen hands off.
- *
- * Uses the RAW logo JPG directly — no transparency processing needed. Its
- * own background color (#1C2127, sampled directly from the source file)
- * matches `backgroundColor` below exactly, so an opaque covering box in the
- * same color reveals the logo with no visible seam, without needing an
- * alpha channel at all.
- *
- * The reveal is a simple height wipe: an opaque box the same color as the
- * background covers the full logo at start, then shrinks away top-to-bottom
- * to reveal it underneath.
- */
+// Blocks until the engine is fully warm, per the "block startup" decision —
+// waits for max(reveal animation, warmup completion). On a cold engine
+// init this can be much longer than the animation itself.
 @Composable
 fun NovaSplashScreen(
     onFinished: () -> Unit,
-    backgroundColor: Color = Color(0xFF1C2127), // matches the JPG's own background exactly
+    warmup: suspend () -> Unit,
+    backgroundColor: Color = Color(0xFF1C2127),
     durationMillis: Int = 900,
     holdMillis: Long = 400,
+    warmupStartDelayMillis: Long = 200,
 ) {
     var revealTriggered by remember { mutableFloatStateOf(0f) }
 
-    // 0 = fully covered, 1 = fully revealed
     val revealProgress by animateFloatAsState(
         targetValue = revealTriggered,
         animationSpec = tween(durationMillis = durationMillis, easing = LinearEasing),
@@ -54,16 +48,30 @@ fun NovaSplashScreen(
     )
 
     LaunchedEffect(Unit) {
-        delay(150) // small beat before the wipe starts
+        delay(150)
         revealTriggered = 1f
-        delay(durationMillis.toLong() + holdMillis)
+
+        coroutineScope {
+            val animationDone = async { delay(durationMillis.toLong() + holdMillis) }
+            val warmupDone = async {
+                delay(warmupStartDelayMillis)
+                try {
+                    warmup()
+                } catch (e: Exception) {
+                    // Setup already verified the model file, so this is
+                    // unexpected if it happens — proceed anyway rather than
+                    // block forever; NovaApp's cold-start hint covers a
+                    // not-actually-ready engine
+                }
+            }
+            awaitAll(animationDone, warmupDone)
+        }
+
         onFinished()
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(backgroundColor),
+        modifier = Modifier.fillMaxSize().background(backgroundColor),
         contentAlignment = Alignment.Center,
     ) {
         Box(modifier = Modifier.size(220.dp)) {
@@ -73,9 +81,6 @@ fun NovaSplashScreen(
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
-            // opaque cover, same color as background, shrinking away from
-            // the top as revealProgress goes 0 -> 1, revealing the logo
-            // underneath top-to-bottom
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

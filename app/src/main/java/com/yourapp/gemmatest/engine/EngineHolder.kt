@@ -1,5 +1,6 @@
 package com.yourapp.gemmatest.engine
 
+import android.content.Context
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -15,7 +16,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
-const val MODEL_PATH = "/storage/emulated/0/Download/gemma3-1b-it-int4.litertlm"
+const val MODEL_FILENAME = "gemma3-1b-it-int4.litertlm"
+const val EXPECTED_MODEL_SIZE = 584_417_280L
+
+// app-private, app-specific external storage — no permission needed on
+// modern Android, cleaned up automatically on uninstall
+fun modelFile(context: Context): File = File(context.getExternalFilesDir(null), MODEL_FILENAME)
 
 data class ChatTurn(val role: String, val text: String)
 
@@ -42,16 +48,13 @@ private val SUBJECT_INSTRUCTIONS = mapOf(
 private val FALLBACK_INSTRUCTION =
     "You are Irachat, an on-device AI assistant developed by IRA Inc, a Nigerian technology company." + LENGTH_RULE
 
-class EngineHolder {
+class EngineHolder(private val context: Context) {
     private var engine: Engine? = null
     private var conversation: Conversation? = null
 
     private val engineInitMutex = Mutex()
     private var engineInitDeferred: CompletableDeferred<Engine>? = null
 
-    // simple, cheap read used by the UI to decide whether to show a
-    // "first response may take a while" hint — true once initialize() has
-    // actually completed
     val isReady: Boolean
         get() = engine != null
 
@@ -68,12 +71,12 @@ class EngineHolder {
 
             return withContext(Dispatchers.IO) {
                 try {
-                    val modelFile = File(MODEL_PATH)
-                    if (!modelFile.exists()) {
-                        throw IllegalStateException("Model file not found at $MODEL_PATH")
+                    val file = modelFile(context)
+                    if (!file.exists()) {
+                        throw IllegalStateException("Model file not found at ${file.absolutePath}")
                     }
                     val config = EngineConfig(
-                        modelPath = MODEL_PATH,
+                        modelPath = file.absolutePath,
                         backend = Backend.CPU(),
                         maxNumTokens = 1024,
                     )
@@ -117,9 +120,6 @@ class EngineHolder {
         }
     }
 
-    // based ONLY on the user's own message — never the AI's response — so
-    // the sidebar title reflects what the user asked, not how the model
-    // answered
     suspend fun generateSummary(userText: String): String {
         val readyEngine = ensureEngine()
         return withContext(Dispatchers.IO) {
