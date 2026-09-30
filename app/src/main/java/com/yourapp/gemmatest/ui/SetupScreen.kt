@@ -1,5 +1,7 @@
 package com.yourapp.gemmatest.ui
 
+import android.content.Context
+import android.os.PowerManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,9 +26,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yourapp.gemmatest.NovaApplication
 import com.yourapp.gemmatest.engine.modelFile
+import com.yourapp.gemmatest.service.GenerationForegroundService
 import com.yourapp.gemmatest.theme.LocalNovaColors
 
 private const val REQUIRED_FREE_BYTES = 1_288_490_188L // ~1.2 GiB
+private const val SETUP_WAKE_LOCK_TIMEOUT_MS = 20 * 60 * 1000L // 20 min safety cap
 
 private sealed class SetupState {
     object CheckingSpace : SetupState()
@@ -54,32 +58,45 @@ fun SetupScreen(onSetupComplete: () -> Unit) {
             return@LaunchedEffect
         }
 
+        // Keeps setup running if the user backgrounds the app mid-setup —
+        // same wake lock + foreground service pattern already used during
+        // chat generation, so this survives the same way that does.
+        val powerManager = context.applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Irachat::SetupWakeLock")
+        wakeLock.acquire(SETUP_WAKE_LOCK_TIMEOUT_MS)
+        GenerationForegroundService.start(context.applicationContext, message = "Setting up Irachat…")
+
         try {
-            downloader.download { downloaded, total ->
-                state = SetupState.Downloading(downloaded, total)
+            try {
+                downloader.download { downloaded, total ->
+                    state = SetupState.Downloading(downloaded, total)
+                }
+            } catch (e: Exception) {
+                state = SetupState.Failed("Setup couldn't finish. Check your connection and try again.")
+                return@LaunchedEffect
             }
-        } catch (e: Exception) {
-            state = SetupState.Failed("Setup couldn't finish downloading. Check your connection and try again.")
-            return@LaunchedEffect
-        }
 
-        state = SetupState.Verifying
-        val verified = try { downloader.verify() } catch (e: Exception) { false }
-        if (!verified) {
-            modelFile(context).delete()
-            state = SetupState.VerifyFailed
-            return@LaunchedEffect
-        }
+            state = SetupState.Verifying
+            val verified = try { downloader.verify() } catch (e: Exception) { false }
+            if (!verified) {
+                modelFile(context).delete()
+                state = SetupState.VerifyFailed
+                return@LaunchedEffect
+            }
 
-        state = SetupState.Warming
-        try {
-            application.engineHolder.warmup()
-        } catch (e: Exception) {
-            state = SetupState.Failed("Setup finished downloading but couldn't start the model. Try again.")
-            return@LaunchedEffect
-        }
+            state = SetupState.Warming
+            try {
+                application.engineHolder.warmup()
+            } catch (e: Exception) {
+                state = SetupState.Failed("Something went wrong during setup. Let's try again.")
+                return@LaunchedEffect
+            }
 
-        onSetupComplete()
+            onSetupComplete()
+        } finally {
+            if (wakeLock.isHeld) wakeLock.release()
+            GenerationForegroundService.stop(context.applicationContext)
+        }
     }
 
     Box(
@@ -98,11 +115,11 @@ fun SetupScreen(onSetupComplete: () -> Unit) {
 
             when (val s = state) {
                 is SetupState.CheckingSpace ->
-                    Text("Checking available storage...", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
+                    Text("Getting things ready...", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
 
                 is SetupState.InsufficientSpace -> {
                     Text(
-                        "Irachat needs about 1.2GB of free space to set up. Please free up some space and try again.",
+                        "There isn't quite enough space to finish setup. Free up some space and try again.",
                         color = colors.Text2, fontSize = 13.sp, lineHeight = 19.sp, textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(18.dp))
@@ -111,26 +128,22 @@ fun SetupScreen(onSetupComplete: () -> Unit) {
 
                 is SetupState.Downloading -> {
                     val progress = if (s.total > 0) s.downloaded.toFloat() / s.total.toFloat() else 0f
-                    Text("Downloading the model...", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
+                    val percent = (progress * 100).toInt()
+                    Text("Setting up Irachat... $percent%", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(16.dp))
                     LinearProgressIndicator(
                         progress = { progress },
                         modifier = Modifier.fillMaxWidth(0.8f).height(6.dp).clip(RoundedCornerShape(3.dp)),
                         color = colors.Blue500, trackColor = colors.Surface2,
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "${s.downloaded / (1024 * 1024)} MB of ${s.total / (1024 * 1024)} MB",
-                        color = colors.Text2, fontSize = 11.5.sp
-                    )
                 }
 
                 is SetupState.Verifying ->
-                    Text("Verifying download...", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
+                    Text("Finishing setup...", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
 
                 is SetupState.VerifyFailed -> {
                     Text(
-                        "The download didn't verify correctly. This can happen on an unstable connection. Let's try again.",
+                        "Something went wrong during setup. Let's try again.",
                         color = colors.Text2, fontSize = 13.sp, lineHeight = 19.sp, textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(18.dp))
@@ -138,7 +151,7 @@ fun SetupScreen(onSetupComplete: () -> Unit) {
                 }
 
                 is SetupState.Warming -> {
-                    Text("Getting the model ready...", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
+                    Text("Almost there...", color = colors.Text2, fontSize = 13.sp, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(10.dp))
                     Text(
                         "Tip: for the best experience, consider closing other apps running in the background.",
